@@ -69,67 +69,77 @@ def get_comparison_data(prov, thn, bln, moda):
     df_cum_prev = pd.read_sql(q_cum_prev, engine)
     return df_curr, df_prev, df_cum_curr, df_cum_prev, prev_bln_name, prev_thn
 
-def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, label, row_col, thn, bln, prev_bln, prev_thn):
+def format_report_table(
+    df_curr,
+    df_prev,
+    df_cum_curr,
+    df_cum_prev,
+    col_target,
+    label,
+    row_col,
+    thn,
+    bln,
+    prev_bln,
+    prev_thn,
+):
     curr_grp = df_curr.groupby(row_col)[col_target].sum()
     prev_grp = df_prev.groupby(row_col)[col_target].sum()
     cum_curr_grp = df_cum_curr.groupby(row_col)[col_target].sum()
     cum_prev_grp = df_cum_prev.groupby(row_col)[col_target].sum()
 
     report = pd.DataFrame(index=curr_grp.index)
-    col_curr, col_prev = f'{bln} {thn}', f'{prev_bln} {prev_thn}'
-    col_cum_curr, col_cum_prev = f'Jan-{bln} {thn}', f'Jan-{bln} {int(thn)-1}'
+    col_curr, col_prev = f"{bln} {thn}", f"{prev_bln} {prev_thn}"
+    col_cum_curr, col_cum_prev = f"Jan-{bln} {thn}", f"Jan-{bln} {int(thn)-1}"
 
+    # 1. Masukkan data dasar ke DataFrame
     report[col_prev] = prev_grp
     report[col_curr] = curr_grp
     report[col_cum_prev] = cum_prev_grp
     report[col_cum_curr] = cum_curr_grp
 
-    # Menambahkan Baris Total
-    total_row = pd.DataFrame({
-        col_prev: [report[col_prev].sum()],
-        col_curr: [report[col_curr].sum()],
-        col_cum_prev: [report[col_cum_prev].sum()],
-        col_cum_curr: [report[col_cum_curr].sum()]
-    }, index=['JUMLAH TOTAL'])
+    # 2. Tambahkan baris total
+    total_row = pd.DataFrame(
+        {
+            col_prev: [report[col_prev].sum()],
+            col_curr: [report[col_curr].sum()],
+            col_cum_prev: [report[col_cum_prev].sum()],
+            col_cum_curr: [report[col_cum_curr].sum()],
+        },
+        index=["JUMLAH TOTAL"],
+    )
     report = pd.concat([report, total_row])
 
-    # Perhitungan Persentase
-    report['M-to-M (%)'] = ((report[col_curr] - report[col_prev]) / report[col_prev] * 100).replace([np.inf, -np.inf, np.nan], 'Undefined')
-    report['Y-on-Y (%)'] = ((report[col_cum_curr] - report[col_cum_prev]) / report[col_cum_prev] * 100).replace([np.inf, -np.inf, np.nan], 'Undefined')
+    # 3. Hitung M-to-M (%) dan Y-on-Y (%)
+    report["M-to-M (%)"] = (
+        (report[col_curr] - report[col_prev]) / report[col_prev] * 100
+    ).replace([np.inf, -np.inf], np.nan).fillna(0)
+    report["Y-on-Y (%)"] = (
+        (report[col_cum_curr] - report[col_cum_prev])
+        / report[col_cum_prev]
+        * 100
+    ).replace([np.inf, -np.inf], np.nan).fillna(0)
 
+    # =========================================================================
+    # RE-ORDER KOLOM (M-to-M diletakkan di antara col_curr dan col_cum_prev)
+    # =========================================================================
+    ordered_columns = [
+        col_prev,
+        col_curr,
+        "M-to-M (%)",  # <-- M-to-M diletakkan di sini
+        col_cum_prev,
+        col_cum_curr,
+        "Y-on-Y (%)",
+    ]
+    report = report[ordered_columns]
+
+    # Render Tabel
     st.markdown(f"##### 📝 Indikator: {label}")
-    report_styled = report.style.format(indonesian_number_format)
-    st.dataframe(report_styled, use_container_width=True)
+    st.dataframe(
+        report.fillna(0)
+        .style.format(indonesian_number_format)
+        .background_gradient(subset=["M-to-M (%)", "Y-on-Y (%)"], cmap="RdYlGn")
+    )
 
     with st.expander(f"✨ AI Insight: {label}"):
-        st.write(generate_ai_caption(label, report))
-
-def show_report_page():
-    st.title("📋 Laporan Komparatif Strategis")
-    c1, c2, c3, c4 = st.columns(4)
-    with c1: prov = st.selectbox("Provinsi", list(PEMETAAN_WILAYAH.keys()))
-    with c2: thn = st.selectbox("Tahun", ['2024', '2025', '2026'], index=1)
-    with c3: bln = st.selectbox("Bulan", list(MONTH_MAP.keys()))
-    with c4: moda = st.selectbox("Moda", ["Transportasi Udara", "Transportasi Laut"])
-    if st.button("Generate Laporan"):
-        df_curr, df_prev, df_cum_curr, df_cum_prev, prev_bln, prev_thn = get_comparison_data(prov, thn, bln, moda)
-        if df_curr.empty: st.warning("Tidak ada data."); return
-        row_col = 'nama_bandara' if moda == 'Transportasi Udara' else 'nama_kabkota'
-        
-        if moda == 'Transportasi Udara':
-            targets = [
-                ("penumpang_datang", "Penumpang Datang"), 
-                ("penumpang_berangkat", "Penumpang Berangkat"),
-                ("barang_bongkar_kg", "Barang Bongkar (Kg)"),
-                ("barang_muat_kg", "Barang Muat (Kg)")
-            ]
-        else:
-            targets = [
-                ("dn_penumpang_turun", "Penumpang Turun"), 
-                ("dn_penumpang_naik", "Penumpang Naik"),
-                ("dn_bongkar_barang_ton", "Bongkar Barang (Ton)"),
-                ("dn_muat_barang_ton", "Muat Barang (Ton)")
-            ]
-            
-        for col, label in targets:
-            format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col, label, row_col, thn, bln, prev_bln, prev_thn)
+        caption = generate_ai_caption(label, report)
+        st.write(caption)
