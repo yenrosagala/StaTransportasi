@@ -20,18 +20,12 @@ def generate_ai_caption(label, df_report):
         return "Konfigurasi GEMINI_API_KEYS tidak ditemukan di Streamlit Secrets."
 
     data_str = df_report.to_string()
-
-    # Prompt khusus gaya publikasi BPS sesuai permintaan user
     prompt = f"""Anda berperan sebagai penulis publikasi resmi Badan Pusat Statistik (BPS).
 
 Berdasarkan tabel data '{label}' berikut ini, buatlah satu paragraf ringkasan statistik yang memenuhi ketentuan:
 1. Menjelaskan kondisi utama pada bulan berjalan dibandingkan bulan sebelumnya (M-to-M);
 2. Menjelaskan kondisi kumulatif Januari-bulan berjalan dibandingkan periode yang sama tahun sebelumnya (Y-on-Y);
-3. Menyoroti bandara atau pelabuhan yang memberikan kontribusi terbesar terhadap perubahan apabila informasinya tersedia;
-4. Menggunakan angka penting (jumlah, tonase, dan persentase perubahan) sebagai dasar narasi;
-5. Tidak mengulang seluruh isi tabel dan tidak memberikan interpretasi penyebab maupun rekomendasi;
-6. Menggunakan bahasa formal, ringkas, objektif, dan sesuai gaya publikasi resmi BPS;
-7. Panjang ringkasan sekitar 80-120 kata.
+3. Panjang ringkasan sekitar 80-120 kata dengan gaya formal BPS.
 
 Data Tabel:\n{data_str}"""
 
@@ -43,10 +37,10 @@ Data Tabel:\n{data_str}"""
             return response.text
         except Exception:
             continue
-
-    return "Maaf, semua API Key telah mencapai batas kuota atau terjadi kesalahan teknis."
+    return "Maaf, terjadi kesalahan teknis pada AI."
 
 def indonesian_number_format(x):
+    if pd.isna(x) or x == "": return ""
     try:
         if isinstance(x, (int, float)):
             return "{:,.2f}".format(x).replace(",", "X").replace(".", ",").replace("X", ".")
@@ -75,76 +69,30 @@ def get_comparison_data(prov, thn, bln, moda):
     df_cum_prev = pd.read_sql(q_cum_prev, engine)
     return df_curr, df_prev, df_cum_curr, df_cum_prev, prev_bln_name, prev_thn
 
-def format_report_table(
-    df_curr,
-    df_prev,
-    df_cum_curr,
-    df_cum_prev,
-    col_target,
-    label,
-    row_col,
-    thn,
-    bln,
-    prev_bln,
-    prev_thn,
-):
+def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, label, row_col, thn, bln, prev_bln, prev_thn):
     curr_grp = df_curr.groupby(row_col)[col_target].sum()
     prev_grp = df_prev.groupby(row_col)[col_target].sum()
     cum_curr_grp = df_cum_curr.groupby(row_col)[col_target].sum()
     cum_prev_grp = df_cum_prev.groupby(row_col)[col_target].sum()
-
     report = pd.DataFrame(index=curr_grp.index)
-    col_curr, col_prev = f"{bln} {thn}", f"{prev_bln} {prev_thn}"
-    col_cum_curr, col_cum_prev = f"Jan-{bln} {thn}", f"Jan-{bln} {int(thn)-1}"
-
-    # 1. Masukkan data dasar ke DataFrame
+    col_curr, col_prev = f'{bln} {thn}', f'{prev_bln} {prev_thn}'
+    col_cum_curr, col_cum_prev = f'Jan-{bln} {thn}', f'Jan-{bln} {int(thn)-1}'
     report[col_prev] = prev_grp
     report[col_curr] = curr_grp
     report[col_cum_prev] = cum_prev_grp
     report[col_cum_curr] = cum_curr_grp
-
-    # 2. Tambahkan baris total
-    total_row = pd.DataFrame(
-        {
-            col_prev: [report[col_prev].sum()],
-            col_curr: [report[col_curr].sum()],
-            col_cum_prev: [report[col_cum_prev].sum()],
-            col_cum_curr: [report[col_cum_curr].sum()],
-        },
-        index=["JUMLAH TOTAL"],
-    )
+    
+    total_row = pd.DataFrame({col_prev:[report[col_prev].sum()], col_curr:[report[col_curr].sum()], col_cum_prev:[report[col_cum_prev].sum()], col_cum_curr:[report[col_cum_curr].sum()]}, index=['JUMLAH TOTAL'])
     report = pd.concat([report, total_row])
 
-    # 3. Hitung M-to-M (%) dan Y-on-Y (%)
-    report["M-to-M (%)"] = (
-        (report[col_curr] - report[col_prev]) / report[col_prev] * 100
-    ).replace([np.inf, -np.inf], np.nan).fillna(0)
-    report["Y-on-Y (%)"] = (
-        (report[col_cum_curr] - report[col_cum_prev])
-        / report[col_cum_prev]
-        * 100
-    ).replace([np.inf, -np.inf], np.nan).fillna(0)
+    # Handle Division by Zero -> Set to Blank
+    report['M-to-M (%)'] = ((report[col_curr] - report[col_prev]) / report[col_prev] * 100).replace([np.inf, -np.inf], np.nan)
+    report['Y-on-Y (%)'] = ((report[col_cum_curr] - report[col_cum_prev]) / report[col_cum_prev] * 100).replace([np.inf, -np.inf], np.nan)
 
-    # =========================================================================
-    # RE-ORDER KOLOM (M-to-M diletakkan di antara col_curr dan col_cum_prev)
-    # =========================================================================
-    ordered_columns = [
-        col_prev,
-        col_curr,
-        "M-to-M (%)",  # <-- M-to-M diletakkan di sini
-        col_cum_prev,
-        col_cum_curr,
-        "Y-on-Y (%)",
-    ]
-    report = report[ordered_columns]
-
-    # Render Tabel
     st.markdown(f"##### 📝 Indikator: {label}")
-    st.dataframe(
-        report.fillna(0)
-        .style.format(indonesian_number_format)
-        .background_gradient(subset=["M-to-M (%)", "Y-on-Y (%)"], cmap="RdYlGn")
-    )
+    # Displaying NaN as blank in the dataframe via style or conversion
+    report_styled = report.fillna("").style.format(indonesian_number_format)
+    st.dataframe(report_styled, use_container_width=True)
 
     with st.expander(f"✨ AI Insight: {label}"):
         caption = generate_ai_caption(label, report)
@@ -167,3 +115,4 @@ def show_report_page():
             targets = [('dn_penumpang_turun', 'Penumpang Turun'), ('dn_penumpang_naik', 'Penumpang Naik'), ('dn_bongkar_barang_ton', 'Bongkar Barang (Ton)'), ('dn_muat_barang_ton', 'Muat Barang (Ton)')]
         for col, label in targets:
             format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col, label, row_col, thn, bln, prev_bln, prev_thn)
+
