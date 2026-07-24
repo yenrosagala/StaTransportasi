@@ -5,3 +5,4 @@ sqlalchemy
 lxml
 xlrd
 matplotlib
+google.generativeai
