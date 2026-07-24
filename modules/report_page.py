@@ -85,12 +85,12 @@ def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, 
     total_row = pd.DataFrame({col_prev:[report[col_prev].sum()], col_curr:[report[col_curr].sum()], col_cum_prev:[report[col_cum_prev].sum()], col_cum_curr:[report[col_cum_curr].sum()]}, index=['JUMLAH TOTAL'])
     report = pd.concat([report, total_row])
 
-    # Handle Division by Zero -> Set to Blank
+    # Perbaikan: Menangani pembagian dengan nol agar menjadi NaN, lalu diformat menjadi blank
     report['M-to-M (%)'] = ((report[col_curr] - report[col_prev]) / report[col_prev] * 100).replace([np.inf, -np.inf], np.nan)
     report['Y-on-Y (%)'] = ((report[col_cum_curr] - report[col_cum_prev]) / report[col_cum_prev] * 100).replace([np.inf, -np.inf], np.nan)
 
     st.markdown(f"##### 📝 Indikator: {label}")
-    # Displaying NaN as blank in the dataframe via style or conversion
+    # Menampilkan NaN sebagai kosong
     report_styled = report.fillna("").style.format(indonesian_number_format)
     st.dataframe(report_styled, use_container_width=True)
 
