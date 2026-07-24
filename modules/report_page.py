@@ -74,11 +74,11 @@ def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, 
     prev_grp = df_prev.groupby(row_col)[col_target].sum()
     cum_curr_grp = df_cum_curr.groupby(row_col)[col_target].sum()
     cum_prev_grp = df_cum_prev.groupby(row_col)[col_target].sum()
-    
+
     report = pd.DataFrame(index=curr_grp.index)
     col_curr, col_prev = f'{bln} {thn}', f'{prev_bln} {prev_thn}'
     col_cum_curr, col_cum_prev = f'Jan-{bln} {thn}', f'Jan-{bln} {int(thn)-1}'
-    
+
     report[col_prev] = prev_grp
     report[col_curr] = curr_grp
     report[col_cum_prev] = cum_prev_grp
@@ -115,7 +115,21 @@ def show_report_page():
         df_curr, df_prev, df_cum_curr, df_cum_prev, prev_bln, prev_thn = get_comparison_data(prov, thn, bln, moda)
         if df_curr.empty: st.warning("Tidak ada data."); return
         row_col = 'nama_bandara' if moda == 'Transportasi Udara' else 'nama_kabkota'
-        targets = [("penumpang_datang", "Penumpang Datang"), ("penumpang_berangkat", "Penumpang Berangkat")]
+        
+        if moda == 'Transportasi Udara':
+            targets = [
+                ("penumpang_datang", "Penumpang Datang"), 
+                ("penumpang_berangkat", "Penumpang Berangkat"),
+                ("barang_bongkar_kg", "Barang Bongkar (Kg)"),
+                ("barang_muat_kg", "Barang Muat (Kg)")
+            ]
+        else:
+            targets = [
+                ("dn_penumpang_turun", "Penumpang Turun"), 
+                ("dn_penumpang_naik", "Penumpang Naik"),
+                ("dn_bongkar_barang_ton", "Bongkar Barang (Ton)"),
+                ("dn_muat_barang_ton", "Muat Barang (Ton)")
+            ]
+            
         for col, label in targets:
             format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col, label, row_col, thn, bln, prev_bln, prev_thn)
-
