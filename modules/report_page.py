@@ -75,25 +75,76 @@ def get_comparison_data(prov, thn, bln, moda):
     df_cum_prev = pd.read_sql(q_cum_prev, engine)
     return df_curr, df_prev, df_cum_curr, df_cum_prev, prev_bln_name, prev_thn
 
-def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, label, row_col, thn, bln, prev_bln, prev_thn):
+def format_report_table(
+    df_curr,
+    df_prev,
+    df_cum_curr,
+    df_cum_prev,
+    col_target,
+    label,
+    row_col,
+    thn,
+    bln,
+    prev_bln,
+    prev_thn,
+):
     curr_grp = df_curr.groupby(row_col)[col_target].sum()
     prev_grp = df_prev.groupby(row_col)[col_target].sum()
     cum_curr_grp = df_cum_curr.groupby(row_col)[col_target].sum()
     cum_prev_grp = df_cum_prev.groupby(row_col)[col_target].sum()
+
     report = pd.DataFrame(index=curr_grp.index)
-    col_curr, col_prev = f'{bln} {thn}', f'{prev_bln} {prev_thn}'
-    col_cum_curr, col_cum_prev = f'Jan-{bln} {thn}', f'Jan-{bln} {int(thn)-1}'
+    col_curr, col_prev = f"{bln} {thn}", f"{prev_bln} {prev_thn}"
+    col_cum_curr, col_cum_prev = f"Jan-{bln} {thn}", f"Jan-{bln} {int(thn)-1}"
+
+    # 1. Masukkan data dasar ke DataFrame
     report[col_prev] = prev_grp
     report[col_curr] = curr_grp
     report[col_cum_prev] = cum_prev_grp
     report[col_cum_curr] = cum_curr_grp
-    total_row = pd.DataFrame({col_prev:[report[col_prev].sum()], col_curr:[report[col_curr].sum()], col_cum_prev:[report[col_cum_prev].sum()], col_cum_curr:[report[col_cum_curr].sum()]}, index=['JUMLAH TOTAL'])
-    report = pd.concat([report, total_row])
-    report['M-to-M (%)'] = ((report[col_curr] - report[col_prev]) / report[col_prev] * 100).replace([np.inf, -np.inf], np.nan).fillna(0)
-    report['Y-on-Y (%)'] = ((report[col_cum_curr] - report[col_cum_prev]) / report[col_cum_prev] * 100).replace([np.inf, -np.inf], np.nan).fillna(0)
 
+    # 2. Tambahkan baris total
+    total_row = pd.DataFrame(
+        {
+            col_prev: [report[col_prev].sum()],
+            col_curr: [report[col_curr].sum()],
+            col_cum_prev: [report[col_cum_prev].sum()],
+            col_cum_curr: [report[col_cum_curr].sum()],
+        },
+        index=["JUMLAH TOTAL"],
+    )
+    report = pd.concat([report, total_row])
+
+    # 3. Hitung M-to-M (%) dan Y-on-Y (%)
+    report["M-to-M (%)"] = (
+        (report[col_curr] - report[col_prev]) / report[col_prev] * 100
+    ).replace([np.inf, -np.inf], np.nan).fillna(0)
+    report["Y-on-Y (%)"] = (
+        (report[col_cum_curr] - report[col_cum_prev])
+        / report[col_cum_prev]
+        * 100
+    ).replace([np.inf, -np.inf], np.nan).fillna(0)
+
+    # =========================================================================
+    # RE-ORDER KOLOM (M-to-M diletakkan di antara col_curr dan col_cum_prev)
+    # =========================================================================
+    ordered_columns = [
+        col_prev,
+        col_curr,
+        "M-to-M (%)",  # <-- M-to-M diletakkan di sini
+        col_cum_prev,
+        col_cum_curr,
+        "Y-on-Y (%)",
+    ]
+    report = report[ordered_columns]
+
+    # Render Tabel
     st.markdown(f"##### 📝 Indikator: {label}")
-    st.dataframe(report.fillna(0).style.format(indonesian_number_format).background_gradient(subset=['M-to-M (%)', 'Y-on-Y (%)'], cmap='RdYlGn'))
+    st.dataframe(
+        report.fillna(0)
+        .style.format(indonesian_number_format)
+        .background_gradient(subset=["M-to-M (%)", "Y-on-Y (%)"], cmap="RdYlGn")
+    )
 
     with st.expander(f"✨ AI Insight: {label}"):
         caption = generate_ai_caption(label, report)
