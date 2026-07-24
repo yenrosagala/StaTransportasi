@@ -17,7 +17,7 @@ def generate_ai_caption(label, df_report):
         else:
             api_keys = list(keys_raw)
     except:
-        return "Konfigurasi GEMINI_API_KEYS tidak ditemukan di Streamlit Secrets."
+        return "Konfigurasi GEMINI_API_KEYS tidak ditemukan."
 
     data_str = df_report.to_string()
     prompt = f"""Anda berperan sebagai penulis publikasi resmi Badan Pusat Statistik (BPS).
@@ -35,12 +35,12 @@ Data Tabel:\n{data_str}"""
             model = genai.GenerativeModel('gemini-1.5-flash')
             response = model.generate_content(prompt)
             return response.text
-        except Exception:
+        except:
             continue
     return "Maaf, terjadi kesalahan teknis pada AI."
 
 def indonesian_number_format(x):
-    if pd.isna(x) or x == "": return ""
+    if pd.isna(x) or x == "Undefined": return x
     try:
         if isinstance(x, (int, float)):
             return "{:,.2f}".format(x).replace(",", "X").replace(".", ",").replace("X", ".")
@@ -74,29 +74,35 @@ def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, 
     prev_grp = df_prev.groupby(row_col)[col_target].sum()
     cum_curr_grp = df_cum_curr.groupby(row_col)[col_target].sum()
     cum_prev_grp = df_cum_prev.groupby(row_col)[col_target].sum()
+    
     report = pd.DataFrame(index=curr_grp.index)
     col_curr, col_prev = f'{bln} {thn}', f'{prev_bln} {prev_thn}'
     col_cum_curr, col_cum_prev = f'Jan-{bln} {thn}', f'Jan-{bln} {int(thn)-1}'
+    
     report[col_prev] = prev_grp
     report[col_curr] = curr_grp
     report[col_cum_prev] = cum_prev_grp
     report[col_cum_curr] = cum_curr_grp
-    
-    total_row = pd.DataFrame({col_prev:[report[col_prev].sum()], col_curr:[report[col_curr].sum()], col_cum_prev:[report[col_cum_prev].sum()], col_cum_curr:[report[col_cum_curr].sum()]}, index=['JUMLAH TOTAL'])
+
+    # Menambahkan Baris Total
+    total_row = pd.DataFrame({
+        col_prev: [report[col_prev].sum()],
+        col_curr: [report[col_curr].sum()],
+        col_cum_prev: [report[col_cum_prev].sum()],
+        col_cum_curr: [report[col_cum_curr].sum()]
+    }, index=['JUMLAH TOTAL'])
     report = pd.concat([report, total_row])
 
-    # Perbaikan: Menangani pembagian dengan nol agar menjadi NaN, lalu diformat menjadi blank
-    report['M-to-M (%)'] = ((report[col_curr] - report[col_prev]) / report[col_prev] * 100).replace([np.inf, -np.inf], np.nan)
-    report['Y-on-Y (%)'] = ((report[col_cum_curr] - report[col_cum_prev]) / report[col_cum_prev] * 100).replace([np.inf, -np.inf], np.nan)
+    # Perhitungan Persentase
+    report['M-to-M (%)'] = ((report[col_curr] - report[col_prev]) / report[col_prev] * 100).replace([np.inf, -np.inf, np.nan], 'Undefined')
+    report['Y-on-Y (%)'] = ((report[col_cum_curr] - report[col_cum_prev]) / report[col_cum_prev] * 100).replace([np.inf, -np.inf, np.nan], 'Undefined')
 
     st.markdown(f"##### 📝 Indikator: {label}")
-    # Menampilkan NaN sebagai kosong
-    report_styled = report.fillna("").style.format(indonesian_number_format)
+    report_styled = report.style.format(indonesian_number_format)
     st.dataframe(report_styled, use_container_width=True)
 
     with st.expander(f"✨ AI Insight: {label}"):
-        caption = generate_ai_caption(label, report)
-        st.write(caption)
+        st.write(generate_ai_caption(label, report))
 
 def show_report_page():
     st.title("📋 Laporan Komparatif Strategis")
@@ -107,12 +113,9 @@ def show_report_page():
     with c4: moda = st.selectbox("Moda", ["Transportasi Udara", "Transportasi Laut"])
     if st.button("Generate Laporan"):
         df_curr, df_prev, df_cum_curr, df_cum_prev, prev_bln, prev_thn = get_comparison_data(prov, thn, bln, moda)
-        if df_curr.empty: st.warning("Tidak ada data untuk periode terpilih."); return
+        if df_curr.empty: st.warning("Tidak ada data."); return
         row_col = 'nama_bandara' if moda == 'Transportasi Udara' else 'nama_kabkota'
-        if moda == 'Transportasi Udara':
-            targets = [('penumpang_datang', 'Penumpang Datang'), ('penumpang_berangkat', 'Penumpang Berangkat'), ('barang_bongkar_kg', 'Barang Bongkar (Kg)'), ('barang_muat_kg', 'Barang Muat (Kg)')]
-        else:
-            targets = [('dn_penumpang_turun', 'Penumpang Turun'), ('dn_penumpang_naik', 'Penumpang Naik'), ('dn_bongkar_barang_ton', 'Bongkar Barang (Ton)'), ('dn_muat_barang_ton', 'Muat Barang (Ton)')]
+        targets = [("penumpang_datang", "Penumpang Datang"), ("penumpang_berangkat", "Penumpang Berangkat")]
         for col, label in targets:
             format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col, label, row_col, thn, bln, prev_bln, prev_thn)
 
