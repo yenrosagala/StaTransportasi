@@ -1,12 +1,50 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import google.generativeai as genai
 from modules.database import get_engine
 from modules.config import PEMETAAN_WILAYAH
 
 MONTH_MAP = {'Januari':1, 'Februari':2, 'Maret':3, 'April':4, 'Mei':5, 'Juni':6,
              'Juli':7, 'Agustus':8, 'September':9, 'Oktober':10, 'November':11, 'Desember':12}
 INV_MONTH_MAP = {v: k for k, v in MONTH_MAP.items()}
+
+def generate_ai_caption(label, df_report):
+    try:
+        keys_raw = st.secrets['GEMINI_API_KEYS']
+        if isinstance(keys_raw, str):
+            api_keys = [k.strip() for k in keys_raw.split(',')]
+        else:
+            api_keys = list(keys_raw)
+    except:
+        return "Konfigurasi GEMINI_API_KEYS tidak ditemukan di Streamlit Secrets."
+
+    data_str = df_report.to_string()
+
+    # Prompt khusus gaya publikasi BPS sesuai permintaan user
+    prompt = f"""Anda berperan sebagai penulis publikasi resmi Badan Pusat Statistik (BPS).
+
+Berdasarkan tabel data '{label}' berikut ini, buatlah satu paragraf ringkasan statistik yang memenuhi ketentuan:
+1. Menjelaskan kondisi utama pada bulan berjalan dibandingkan bulan sebelumnya (M-to-M);
+2. Menjelaskan kondisi kumulatif Januari-bulan berjalan dibandingkan periode yang sama tahun sebelumnya (Y-on-Y);
+3. Menyoroti bandara atau pelabuhan yang memberikan kontribusi terbesar terhadap perubahan apabila informasinya tersedia;
+4. Menggunakan angka penting (jumlah, tonase, dan persentase perubahan) sebagai dasar narasi;
+5. Tidak mengulang seluruh isi tabel dan tidak memberikan interpretasi penyebab maupun rekomendasi;
+6. Menggunakan bahasa formal, ringkas, objektif, dan sesuai gaya publikasi resmi BPS;
+7. Panjang ringkasan sekitar 80-120 kata.
+
+Data Tabel:\n{data_str}"""
+
+    for key in api_keys:
+        try:
+            genai.configure(api_key=key)
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            response = model.generate_content(prompt)
+            return response.text
+        except Exception:
+            continue
+
+    return "Maaf, semua API Key telah mencapai batas kuota atau terjadi kesalahan teknis."
 
 def indonesian_number_format(x):
     try:
@@ -53,8 +91,13 @@ def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, 
     report = pd.concat([report, total_row])
     report['M-to-M (%)'] = ((report[col_curr] - report[col_prev]) / report[col_prev] * 100).replace([np.inf, -np.inf], np.nan).fillna(0)
     report['Y-on-Y (%)'] = ((report[col_cum_curr] - report[col_cum_prev]) / report[col_cum_prev] * 100).replace([np.inf, -np.inf], np.nan).fillna(0)
+
     st.markdown(f"##### 📝 Indikator: {label}")
     st.dataframe(report.fillna(0).style.format(indonesian_number_format).background_gradient(subset=['M-to-M (%)', 'Y-on-Y (%)'], cmap='RdYlGn'))
+
+    with st.expander(f"✨ AI Insight: {label}"):
+        caption = generate_ai_caption(label, report)
+        st.write(caption)
 
 def show_report_page():
     st.title("📋 Laporan Komparatif Strategis")
