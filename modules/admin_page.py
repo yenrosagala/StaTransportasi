@@ -5,17 +5,44 @@ from modules.database import get_engine, delete_db
 from modules.etl_engine import parse_transport_file
 
 def show_admin_page():
-    st.title("📂 Admin Dashboard: Upload & Data Management")
+    st.title("🔐 Admin Dashboard: Authenticated Access")
 
-    # 1. Database Maintenance Section
+    # 1. Login System
+    if 'admin_logged_in' not in st.session_state:
+        st.session_state['admin_logged_in'] = False
+
+    if not st.session_state['admin_logged_in']:
+        with st.form("login_form"):
+            st.subheader("Login Admin")
+            password = st.text_input("Masukkan Kata Sandi", type="password")
+            submit_button = st.form_submit_button("Login")
+            
+            if submit_button:
+                if password == "papua123":
+                    st.session_state['admin_logged_in'] = True
+                    st.success("Akses Diterima!")
+                    st.rerun()
+                else:
+                    st.error("Kata sandi salah!")
+        return
+
+    # Logout Button at the top right
+    if st.sidebar.button("Log Out Admin"):
+        st.session_state['admin_logged_in'] = False
+        st.rerun()
+
+    st.success("🔓 Anda masuk sebagai Admin.")
+
+    # 2. Database Maintenance Section
     with st.expander("⚠️ Zone Danger: Manage Database"):
+        st.warning("Tindakan ini akan menghapus seluruh data yang ada!")
         if st.button("Reset/Delete Database"):
             if delete_db():
                 st.success("Database deleted successfully!")
-            else:
+            else:    
                 st.info("Database file not found.")
 
-    # 2. Manual Data Correction Section
+    # 3. Manual Data Correction Section
     st.subheader("🛠️ Koreksi Data Manual")
     with st.expander("Buka Editor Database"):
         engine = get_engine()
@@ -28,8 +55,8 @@ def show_admin_page():
             month_edit = st.selectbox("Bulan", ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"], key="edit_month")
 
         if st.button("Cari Data"):
-            query = f"SELECT * FROM {table_edit} WHERE CAST(tahun AS TEXT) = '{year_edit}' AND bulan = '{month_edit}'"
-            df_to_edit = pd.read_sql(query, engine)
+            query = text(f"SELECT * FROM {table_edit} WHERE CAST(tahun AS TEXT) = :tahun AND bulan = :bulan")
+            df_to_edit = pd.read_sql(query, engine, params={"tahun": year_edit, "bulan": month_edit})
             if df_to_edit.empty:
                 st.warning("Data tidak ditemukan untuk periode tersebut.")
             else:
@@ -37,13 +64,12 @@ def show_admin_page():
 
         if 'df_to_edit' in st.session_state:
             edited_df = st.data_editor(st.session_state['df_to_edit'], use_container_width=True, num_rows="dynamic")
-            
+
             if st.button("Simpan Perubahan"):
                 try:
                     with engine.begin() as conn:
-                        # Hapus data lama di periode tersebut untuk menghindari duplikasi
-                        conn.execute(text(f"DELETE FROM {table_edit} WHERE CAST(tahun AS TEXT) = '{year_edit}' AND bulan = '{month_edit}'"))
-                        # Simpan data yang sudah diedit
+                        del_query = text(f"DELETE FROM {table_edit} WHERE CAST(tahun AS TEXT) = :tahun AND bulan = :bulan")
+                        conn.execute(del_query, {"tahun": year_edit, "bulan": month_edit})
                         edited_df.to_sql(table_edit, conn, if_exists='append', index=False)
                     st.success("✅ Perubahan berhasil disimpan ke database!")
                     del st.session_state['df_to_edit']
@@ -52,7 +78,7 @@ def show_admin_page():
 
     st.divider()
 
-    # 3. Upload Section
+    # 4. Upload Section
     st.subheader("📥 Upload Data Baru")
     col1, col2 = st.columns(2)
     with col1:
