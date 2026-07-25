@@ -388,7 +388,7 @@ def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, 
     report_flat = pd.concat([report, total_row])
     report_display_brs = build_brs_display_table(report_flat, prov, moda)
 
-    region_label = "Bandara" if moda == "Transportasi Udara" else "Kabupaten/Kota"
+    region_label = "Bandara" if moda == "Transportasi Udara" else "Pelabuhan/Kabupaten"
 
     with st.spinner(f"Menyusun narasi untuk indikator {label}..."):
         narasi_ai = generate_narrative_ai(report_display_brs, label, moda, prov, bln, thn, prev_bln, prev_thn)
@@ -464,6 +464,7 @@ def show_report_page():
     if st.button("Generate Semua Laporan (Udara & Laut)"):
         all_collected_data = []
         
+        # 1. Moda Transportasi Udara (Menggunakan nama_bandara)
         moda_udara = "Transportasi Udara"
         df_cu, df_pr, df_cc, df_cp, p_bln, p_thn = get_comparison_data(prov, thn, bln, moda_udara)
         if not df_cu.empty:
@@ -476,16 +477,19 @@ def show_report_page():
                 res_item = format_report_table(df_cu, df_pr, df_cc, df_cp, col, label, 'nama_bandara', thn, bln, p_bln, p_thn, table_no=i, prov=prov, moda=moda_udara)
                 all_collected_data.append(res_item)
 
+        # 2. Moda Transportasi Laut (Papua Tengah menggunakan nama_kabkota, lainnya menggunakan nama_pelabuhan)
         moda_laut = "Transportasi Laut"
         df_cu_l, df_pr_l, df_cc_l, df_cp_l, p_bln_l, p_thn_l = get_comparison_data(prov, thn, bln, moda_laut)
         if not df_cu_l.empty:
             st.subheader("🚢 Moda: Transportasi Laut")
+            row_col_laut = 'nama_kabkota' if prov == "Papua Tengah" else 'nama_pelabuhan'
+            
             targets_laut = [
                 ('dn_penumpang_turun', 'Penumpang Turun'), ('dn_penumpang_naik', 'Penumpang Naik'),
                 ('dn_bongkar_barang_ton', 'Barang Bongkar (Ton)'), ('dn_muat_barang_ton', 'Barang Muat (Ton)')
             ]
             for i, (col, label) in enumerate(targets_laut, start=1):
-                res_item = format_report_table(df_cu_l, df_pr_l, df_cc_l, df_cp_l, col, label, 'nama_kabkota', thn, bln, p_bln_l, p_thn_l, table_no=i, prov=prov, moda=moda_laut)
+                res_item = format_report_table(df_cu_l, df_pr_l, df_cc_l, df_cp_l, col, label, row_col_laut, thn, bln, p_bln_l, p_thn_l, table_no=i, prov=prov, moda=moda_laut)
                 all_collected_data.append(res_item)
 
         if all_collected_data:
