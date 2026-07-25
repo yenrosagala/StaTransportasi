@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import google.generativeai as genai
 from sqlalchemy import text
 from modules.database import get_engine
 from modules.config import PEMETAAN_WILAYAH
@@ -15,8 +16,6 @@ def get_comparison_data(prov, thn, bln, moda):
     thn_int = int(thn)
     engine = get_engine()
 
-    # table is chosen from a fixed internal mapping (not user-supplied text),
-    # so it's safe to interpolate; all user-supplied values below are bound as params.
     where_clause = "WHERE UPPER(nama_provinsi) = :prov"
 
     # 1. Current Month
@@ -44,108 +43,59 @@ def get_comparison_data(prov, thn, bln, moda):
     return df_curr, df_prev, df_cum_curr, df_cum_prev, prev_bln_name, prev_thn
 
 def format_id_number(x, decimals=2):
-    """Format angka untuk tampilan dengan konvensi Indonesia:
-    titik (.) sebagai pemisah ribuan, koma (,) sebagai pemisah desimal."""
     if pd.isna(x):
         x = 0
     try:
-        # format Python standar dulu (koma=ribuan, titik=desimal), lalu tukar simbolnya
         s = f"{float(x):,.{decimals}f}"
     except (ValueError, TypeError):
         return str(x)
     return s.replace(",", "§").replace(".", ",").replace("§", ".")
 
-# Metadata bahasa untuk ringkasan naratif per kolom indikator.
-# subject: frasa subjek kalimat, verb: kata penghubung jumlah ("sebanyak"/"sebesar"),
-# satuan: satuan angka, is_penumpang: pakai frasa "menggunakan angkutan ... dalam negeri" atau tidak.
-NARRATIVE_META = {
-    'penumpang_datang':     {'subject': 'Jumlah penumpang yang datang', 'verb': 'sebanyak', 'satuan': 'orang', 'is_penumpang': True},
-    'penumpang_berangkat':  {'subject': 'Jumlah penumpang yang berangkat', 'verb': 'sebanyak', 'satuan': 'orang', 'is_penumpang': True},
-    'barang_bongkar_kg':    {'subject': 'Volume barang yang dibongkar', 'verb': 'sebesar', 'satuan': 'kg', 'is_penumpang': False},
-    'barang_muat_kg':       {'subject': 'Volume barang yang dimuat', 'verb': 'sebesar', 'satuan': 'kg', 'is_penumpang': False},
-    'dn_penumpang_turun':   {'subject': 'Jumlah penumpang yang datang', 'verb': 'sebanyak', 'satuan': 'orang', 'is_penumpang': True},
-    'dn_penumpang_naik':    {'subject': 'Jumlah penumpang yang berangkat', 'verb': 'sebanyak', 'satuan': 'orang', 'is_penumpang': True},
-    'dn_bongkar_barang_ton':{'subject': 'Volume barang yang dibongkar', 'verb': 'sebesar', 'satuan': 'ton', 'is_penumpang': False},
-    'dn_muat_barang_ton':   {'subject': 'Volume barang yang dimuat', 'verb': 'sebesar', 'satuan': 'ton', 'is_penumpang': False},
-}
+def generate_narrative_ai(df_flat, col_target, moda, prov, bln, thn, prev_bln, prev_thn):
+    """
+    Menghasilkan narasi bergaya BRS BPS dengan memanggil API Gemini.
+    Otomatis melakukan rotasi API Key jika terjadi limit/error.
+    """
+    api_keys = st.secrets["API-GEMINI-KEYS"]
+    
+    # Konversi dataframe ke format string/markdown agar mudah dibaca oleh AI
+    data_str = df_flat.to_markdown()
+    
+    prompt = f"""
+    Bertindaklah sebagai analis data Badan Pusat Statistik (BPS).
+    Buatlah 2 paragraf ringkasan naratif dari data tabel statistik di bawah ini.
+    - Paragraf pertama: Fokus pada perbandingan bulan ke bulan (Month-to-Month) pada {bln} {thn} dibandingkan dengan {prev_bln} {prev_thn}.
+    - Paragraf kedua: Fokus pada perbandingan kumulatif tahun ke tahun (Year-on-Year) periode berjalan.
+    
+    Konteks Data:
+    - Provinsi: {prov}
+    - Moda Transportasi: {moda}
+    - Indikator: {col_target}
+    
+    Tabel Data:
+    {data_str}
+    
+    Gunakan gaya bahasa resmi, objektif, dan profesional khas BRS (Berita Resmi Statistik) BPS.
+    Jangan tambahkan kalimat pembuka/penutup seperti "Tentu, ini ringkasannya" atau format tebal berlebihan. Langsung berikan teks paragrafnya.
+    """
 
-def _arah(pct):
-    if pct > 0:
-        return "naik"
-    elif pct < 0:
-        return "turun"
-    return "tidak berubah"
-
-def generate_narrative(report_flat, col_target, moda, region_label, bln, thn, prev_bln, prev_thn,
-                        col_prev, col_curr, col_cum_prev, col_cum_curr):
-    """Buat 2 paragraf ringkasan naratif (bulanan & kumulatif) dari tabel report_flat
-    (kolom flat, sudah termasuk baris TOTAL), meniru gaya narasi BRS BPS.
-    Ini murni template teks berbasis data -- tidak memakai AI/API eksternal."""
-    meta = NARRATIVE_META.get(col_target, {'subject': 'Jumlah', 'verb': 'sebanyak', 'satuan': '', 'is_penumpang': False})
-    angkutan_kecil = 'udara' if moda == 'Transportasi Udara' else 'laut'
-    val_decimals = 0 if meta['satuan'] == 'orang' else 2
-    fmt = lambda v: format_id_number(v, decimals=val_decimals)
-    fmt_pct = lambda v: format_id_number(v, decimals=2)
-
-    subject = meta['subject']
-    if meta['is_penumpang']:
-        subject += f" menggunakan angkutan {angkutan_kecil} dalam negeri"
-
-    total = report_flat.loc['TOTAL']
-    data = report_flat.drop(index='TOTAL')
-
-    total_curr, total_prev, total_mtm = total[col_curr], total[col_prev], total['M-to-M (%)']
-    total_cum_curr, total_cum_prev, total_yoy = total[col_cum_curr], total[col_cum_prev], total['Y-on-Y (%)']
-
-    # --- Paragraf 1: perbandingan bulan ke bulan ---
-    para1 = (
-        f"{subject} pada {bln} {thn} tercatat {meta['verb']} {fmt(total_curr)} {meta['satuan']} "
-        f"atau {_arah(total_mtm)} sebesar {fmt_pct(abs(total_mtm))} persen dibanding {prev_bln} {prev_thn} "
-        f"yang {meta['verb']} {fmt(total_prev)} {meta['satuan']}."
-    )
-
-    if len(data) > 0:
-        if len(data) <= 3:
-            rincian = [
-                f"{region_label} {r} tercatat {meta['verb']} {fmt(data.loc[r, col_curr])} {meta['satuan']} "
-                f"atau {_arah(data.loc[r, 'M-to-M (%)'])} sebesar {fmt_pct(abs(data.loc[r, 'M-to-M (%)']))} persen"
-                for r in data.index
-            ]
-            para1 += f" Jika dirinci menurut {region_label.lower()}, " + "; dan ".join(rincian) + "."
-        else:
-            top_r = data['M-to-M (%)'].idxmax()
-            bot_r = data['M-to-M (%)'].idxmin()
-            para1 += (
-                f" Jika dirinci menurut {region_label.lower()}, peningkatan tertinggi terjadi di {region_label} {top_r} "
-                f"yaitu sebesar {fmt_pct(data.loc[top_r, 'M-to-M (%)'])} persen, sedangkan penurunan terdalam terjadi di "
-                f"{region_label} {bot_r} yaitu sebesar {fmt_pct(abs(data.loc[bot_r, 'M-to-M (%)']))} persen."
-            )
-
-    # --- Paragraf 2: kumulatif Januari s.d. bulan berjalan, tahun ke tahun ---
-    para2 = (
-        f"Secara kumulatif, {meta['subject'].lower()} selama Januari-{bln} {thn} mencapai {fmt(total_cum_curr)} "
-        f"{meta['satuan']} atau {_arah(total_yoy)} sebesar {fmt_pct(abs(total_yoy))} persen bila dibandingkan "
-        f"Januari-{bln} {int(thn)-1} yang {meta['verb']} {fmt(total_cum_prev)} {meta['satuan']}."
-    )
-
-    if len(data) > 0:
-        if len(data) <= 3:
-            rincian2 = [
-                f"{region_label} {r} {_arah(data.loc[r, 'Y-on-Y (%)'])} sebesar {fmt_pct(abs(data.loc[r, 'Y-on-Y (%)']))} persen "
-                f"menjadi {fmt(data.loc[r, col_cum_curr])} {meta['satuan']}"
-                for r in data.index
-            ]
-            para2 += f" Jika dirinci menurut {region_label.lower()}, " + "; ".join(rincian2) + "."
-        else:
-            top_r2 = data['Y-on-Y (%)'].idxmax()
-            bot_r2 = data['Y-on-Y (%)'].idxmin()
-            para2 += (
-                f" Peningkatan tertinggi secara kumulatif terjadi di {region_label} {top_r2} sebesar "
-                f"{fmt_pct(data.loc[top_r2, 'Y-on-Y (%)'])} persen, sedangkan penurunan terdalam terjadi di "
-                f"{region_label} {bot_r2} sebesar {fmt_pct(abs(data.loc[bot_r2, 'Y-on-Y (%)']))} persen."
-            )
-
-    return para1, para2
+    # Rotasi API Key
+    for key in api_keys:
+        try:
+            genai.configure(api_key=key)
+            # Menggunakan gemini-1.5-flash untuk kecepatan dan efisiensi teks
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            response = model.generate_content(prompt)
+            
+            if response.text:
+                return response.text
+                
+        except Exception as e:
+            # Jika key ini limit (ResourceExhausted) atau error lain, lanjutkan ke key berikutnya
+            continue
+            
+    # Jika semua key dalam list gagal/limit
+    return "*(Gagal memuat narasi otomatis: Semua API Key telah mencapai limit atau terjadi kesalahan pada sistem AI.)*"
 
 def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, label, row_col, thn, bln, prev_bln, prev_thn, table_no=None, prov=None, moda=None):
     curr_grp = df_curr.groupby(row_col)[col_target].sum()
@@ -167,9 +117,6 @@ def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, 
 
     report = report.fillna(0)
 
-    # Baris TOTAL: nilai absolut dijumlahkan, lalu persentase M-to-M/Y-on-Y
-    # dihitung ULANG dari total tersebut (bukan rata-rata dari persentase
-    # per baris), supaya representatif secara agregat.
     sum_prev = report[col_prev].sum()
     sum_curr = report[col_curr].sum()
     sum_cum_prev = report[col_cum_prev].sum()
@@ -186,16 +133,12 @@ def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, 
     report_flat = pd.concat([report, total_row])
 
     angkutan = "Angkutan Udara" if moda == "Transportasi Udara" else "Angkutan Laut"
-    region_label = "Bandara" if moda == "Transportasi Udara" else "Kabupaten/Kota"
 
-    # Ringkasan naratif otomatis berbasis template teks (tanpa AI/API eksternal),
-    # meniru gaya narasi Berita Resmi Statistik (BRS) BPS.
-    para1, para2 = generate_narrative(
-        report_flat, col_target, moda, region_label, bln, thn, prev_bln, prev_thn,
-        col_prev, col_curr, col_cum_prev, col_cum_curr
-    )
-    st.markdown(para1)
-
+    # Hasilkan narasi menggunakan Gemini AI dengan rotasi Key
+    with st.spinner(f"Menyusun narasi AI untuk {label}..."):
+        narasi_ai = generate_narrative_ai(report_flat, label, moda, prov, bln, thn, prev_bln, prev_thn)
+    
+    st.markdown(narasi_ai)
 
     if table_no is not None:
         judul = f"Tabel {table_no} Perkembangan {label} {angkutan} Dalam Negeri Provinsi {prov}, {bln} {thn}"
@@ -203,20 +146,16 @@ def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, 
     else:
         st.markdown(f"##### 📝 Indikator: {label}")
 
-    # Susun header 2 level:
-    # Grup 1 -> label indikator: kolom M-1, M, M-to-M (%)
-    # Grup 2 -> "Kumulatif {label}": kolom Jan-M tahun lalu, Jan-M tahun ini, Y-on-Y (%)
     cum_label = f"Kumulatif {label}"
-    report = report_flat.copy()
-    report.columns = pd.MultiIndex.from_tuples([
+    report_display = report_flat.copy()
+    report_display.columns = pd.MultiIndex.from_tuples([
         (label, col_prev), (label, col_curr), (label, 'M-to-M (%)'),
         (cum_label, col_cum_prev), (cum_label, col_cum_curr), (cum_label, 'Y-on-Y (%)')
     ])
 
     pct_cols = [(label, 'M-to-M (%)'), (cum_label, 'Y-on-Y (%)')]
 
-    st.dataframe(report.style.format(format_id_number).background_gradient(subset=pct_cols, cmap='RdYlGn'))
-    st.markdown(para2)
+    st.dataframe(report_display.style.format(format_id_number).background_gradient(subset=pct_cols, cmap='RdYlGn'))
 
 def show_report_page():
     st.title("📋 Laporan Komparatif Strategis")
