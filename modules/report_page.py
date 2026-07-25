@@ -298,23 +298,39 @@ def create_complete_master_word_report(prov, thn, bln, all_report_data):
         hdr_row_0 = table.rows[0]
         hdr_row_1 = table.rows[1]
         
+        # --- PERBAIKAN PENGISIAN HEADER SUPAYA TIDAK DUPLIKASI ---
         for j, col_tuple in enumerate(df_to_export.columns):
             if isinstance(col_tuple, tuple):
-                lvl_0, lvl_1 = str(col_tuple[0]), str(col_tuple[1])
+                lvl_0 = str(col_tuple[0]).strip()
+                lvl_1 = str(col_tuple[1]).strip()
+                
+                # Jika lvl_0 adalah nama kolom index (misal: 'nama_bandara', 'nama_pelabuhan', atau 'nama_kabkota')
+                if j == 0:
+                    hdr_row_0.cells[j].text = "Wilayah / Entitas"
+                    hdr_row_1.cells[j].text = ""
+                else:
+                    # Pastikan baris atas (lvl_0) dan baris bawah (lvl_1) terisi sesuai hierarki aslinya
+                    hdr_row_0.cells[j].text = lvl_0
+                    hdr_row_1.cells[j].text = lvl_1 if lvl_1 and lvl_1 != lvl_0 else ""
             else:
-                lvl_0, lvl_1 = str(col_tuple), ""
-            hdr_row_0.cells[j].text = lvl_0
-            hdr_row_1.cells[j].text = lvl_1
+                hdr_row_0.cells[j].text = str(col_tuple).strip()
+                hdr_row_1.cells[j].text = ""
 
+        # Melakukan Merge Cell secara vertikal & horizontal pada header
         try:
+            # Merge sel baris 0 dan baris 1 untuk kolom pertama (Wilayah)
             hdr_row_0.cells[0].merge(hdr_row_1.cells[0])
+            
+            # Merge horizontal untuk kelompok indikator bulan berjalan (Kolom 1 sampai 3)
             if total_cols >= 4:
                 hdr_row_0.cells[1].merge(hdr_row_0.cells[3])
+                # Merge horizontal untuk kelompok kumulatif (Kolom 4 sampai 6)
                 if total_cols >= 7:
                     hdr_row_0.cells[4].merge(hdr_row_0.cells[6])
         except Exception:
             pass
 
+        # Mengisi Data Baris ke dalam Tabel Word
         for i, row_data in enumerate(df_to_export.values):
             row_cells = table.rows[i + 2].cells
             first_col_val = str(row_data[0]) if not pd.isna(row_data[0]) else ""
@@ -343,6 +359,7 @@ def create_complete_master_word_report(prov, thn, bln, all_report_data):
     doc.save(file_stream)
     file_stream.seek(0)
     return file_stream
+  
 
 def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, label, row_col, thn, bln, prev_bln, prev_thn, table_no=None, prov=None, moda=None):
     curr_grp = df_curr.groupby(row_col)[col_target].sum()
