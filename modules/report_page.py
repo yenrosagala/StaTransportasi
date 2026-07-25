@@ -313,7 +313,7 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
             response = client.models.generate_content(
                 model=model_name,
                 contents=prompt,
-                config=genai.types.GenerateContentConfig(temperature=0.2, max_output_tokens=1024)
+                config=genai.types.GenerateContentConfig(temperature=0.2)
             )
             raw_text = getattr(response, "text", None)
             if raw_text and str(raw_text).strip():
@@ -326,42 +326,6 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
         return None, "Failed"
     
    
-    for key in api_keys:
-        try:
-            client = genai.Client(api_key=key.strip())
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=genai.types.GenerateContentConfig(temperature=0.2, max_output_tokens=1024)
-            )
-            raw_text = getattr(response, "text", None)
-            if raw_text and str(raw_text).strip():
-                text_clean = str(raw_text).strip()
-                cache[cache_key] = text_clean
-                return text_clean, "Gemini AI"
-        except Exception:
-            continue
-            
-    return None, "Failed"
-
-    for key in api_keys:
-        try:
-            client = genai.Client(api_key=key.strip())
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=genai.types.GenerateContentConfig(temperature=0.2, max_output_tokens=1024)
-            )
-            raw_text = getattr(response, "text", None)
-            if raw_text and str(raw_text).strip():
-                text_clean = str(raw_text).strip()
-                cache[cache_key] = text_clean
-                return text_clean, "Gemini AI"
-        except Exception:
-            continue
-            
-    return None, "Failed"
-
 def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln, thn, prev_bln, prev_thn,
                                 col_prev, col_curr, col_cum_prev, col_cum_curr, prov=""):
     meta = NARRATIVE_META.get(col_target, {'subject': 'Total volume', 'satuan': '', 'is_penumpang': False})
