@@ -191,11 +191,11 @@ def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, 
 
     report[col_prev] = prev_grp
     report[col_curr] = curr_grp
-    report['M-to-M (%)'] = ((report[col_curr] - report[col_prev]) / report[col_prev] * 100).replace([np.inf, -np.inf], np.nan).fillna("Undefined")
+    report['M-to-M (%)'] = ((report[col_curr] - report[col_prev]) / report[col_prev] * 100).replace([np.inf, -np.inf], np.nan).fillna(None)2
 
     report[col_cum_prev] = cum_prev_grp
     report[col_cum_curr] = cum_curr_grp
-    report['Y-on-Y (%)'] = ((report[col_cum_curr] - report[col_cum_prev]) / report[col_cum_prev] * 100).replace([np.inf, -np.inf], np.nan).fillna("Undefined")
+    report['Y-on-Y (%)'] = ((report[col_cum_curr] - report[col_cum_prev]) / report[col_cum_prev] * 100).replace([np.inf, -np.inf], np.nan).fillna(None)
 
     report = report.fillna(0)
 
@@ -204,8 +204,8 @@ def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, 
     sum_cum_prev = report[col_cum_prev].sum()
     sum_cum_curr = report[col_cum_curr].sum()
 
-    total_mtm = ((sum_curr - sum_prev) / sum_prev * 100) if sum_prev != 0 else "Undefined"
-    total_yoy = ((sum_cum_curr - sum_cum_prev) / sum_cum_prev * 100) if sum_cum_prev != 0 else "Undefined"
+    total_mtm = ((sum_curr - sum_prev) / sum_prev * 100) if sum_prev != 0 else np.nan
+    total_yoy = ((sum_cum_curr - sum_cum_prev) / sum_cum_prev * 100) if sum_cum_prev != 0 else np.nan
 
     total_row = pd.DataFrame([{
         col_prev: sum_prev, col_curr: sum_curr, 'M-to-M (%)': total_mtm,
