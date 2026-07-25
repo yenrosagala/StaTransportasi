@@ -40,8 +40,8 @@ def get_comparison_data(prov, thn, bln, moda):
     return df_curr, df_prev, df_cum_curr, df_cum_prev, prev_bln_name, prev_thn
 
 def format_id_number(x, decimals=2):
-    if pd.isna(x):
-        x = 0
+    if pd.isna(x) or x == "undefined":
+        return "undefined"
     try:
         s = f"{float(x):,.{decimals}f}"
     except (ValueError, TypeError):
@@ -180,24 +180,31 @@ def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln
     return para1, para2
 
 def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, label, row_col, thn, bln, prev_bln, prev_thn, table_no=None, prov=None, moda=None):
-    curr_grp = df_curr.groupby(row_col)[col_target].sum()
-    prev_grp = df_prev.groupby(row_col)[col_target].sum()
-    cum_curr_grp = df_cum_curr.groupby(row_col)[col_target].sum()
-    cum_prev_grp = df_cum_prev.groupby(row_col)[col_target].sum()
+    # Mengumpulkan seluruh unique row_col dari semua dataframe agar tidak ada baris yang hilang
+    all_rows = pd.concat([
+        df_curr[row_col], df_prev[row_col], df_cum_curr[row_col], df_cum_prev[row_col]
+    ]).unique()
 
-    report = pd.DataFrame(index=curr_grp.index)
+    curr_grp = df_curr.groupby(row_col)[col_target].sum().reindex(all_rows, fill_value=0)
+    prev_grp = df_prev.groupby(row_col)[col_target].sum().reindex(all_rows, fill_value=0)
+    cum_curr_grp = df_cum_curr.groupby(row_col)[col_target].sum().reindex(all_rows, fill_value=0)
+    cum_prev_grp = df_cum_prev.groupby(row_col)[col_target].sum().reindex(all_rows, fill_value=0)
+
+    report = pd.DataFrame(index=all_rows)
     col_curr, col_prev = f"{bln} {thn}", f"{prev_bln} {prev_thn}"
     col_cum_curr, col_cum_prev = f"Jan-{bln} {thn}", f"Jan-{bln} {int(thn)-1}"
 
     report[col_prev] = prev_grp
     report[col_curr] = curr_grp
-    report['M-to-M (%)'] = ((report[col_curr] - report[col_prev]) / report[col_prev] * 100).replace([np.inf, -np.inf], np.nan).fillna(None)2
+    report['M-to-M (%)'] = ((report[col_curr] - report[col_prev]) / report[col_prev] * 100).replace([np.inf, -np.inf], np.nan)
 
     report[col_cum_prev] = cum_prev_grp
-    report[col_cum_curr] = cum_curr_grp
-    report['Y-on-Y (%)'] = ((report[col_cum_curr] - report[col_cum_prev]) / report[col_cum_prev] * 100).replace([np.inf, -np.inf], np.nan).fillna(None)
+    report[col_cum_curr] = cum_cum_curr
+    report['Y-on-Y (%)'] = ((report[col_cum_curr] - report[col_cum_prev]) / report[col_cum_prev] * 100).replace([np.inf, -np.inf], np.nan)
 
     report = report.fillna(0)
+    
+    # Sisa kode selanjutnya tetap sama...
 
     sum_prev = report[col_prev].sum()
     sum_curr = report[col_curr].sum()
