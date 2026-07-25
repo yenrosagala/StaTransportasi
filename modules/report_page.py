@@ -313,7 +313,7 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
             response = client.models.generate_content(
                 model=model_name,
                 contents=prompt,
-                config=genai.types.GenerateContentConfig(temperature=0.2, max_output_tokens=1024)
+                config=genai.types.GenerateContentConfig(temperature=0.2)
             )
             raw_text = getattr(response, "text", None)
             if raw_text and str(raw_text).strip():
@@ -544,7 +544,7 @@ def render_tables_and_narratives(all_collected_data):
         st.markdown(f"**{judul}**")
         st.dataframe(item['styled_df'], use_container_width=True)
 
-        # 2. Generate dan Sisipkan Narasi Tepat di Bawah Tabel Bersesuaian
+        # 2. Generate dan Sisipkan Narasi Tepat di Bawah Tabel Bersesuaian (Tanpa limit token output)
         region_label = "Bandara" if current_moda == "Transportasi Udara" else "Pelabuhan/Kabupaten"
         with st.spinner(f"Menyusun Executive Summary untuk {item['label']}..."):
             text_final, source = generate_single_narrative_ai(
@@ -584,7 +584,6 @@ def render_tables_and_narratives(all_collected_data):
         if p1_text: st.markdown(p1_text)
         if p2_text: st.markdown(p2_text)
         
-        # Simpan narasi ke item untuk export Word
         item['p1'] = p1_text
         item['p2'] = p2_text
 
@@ -601,7 +600,6 @@ def show_report_page():
     if st.button("Generate Semua Laporan (Udara & Laut)"):
         all_collected_data = []
         
-        # 1. Kumpulkan Data Moda Transportasi Udara
         moda_udara = "Transportasi Udara"
         df_cu, df_pr, df_cc, df_cp, p_bln, p_thn = get_comparison_data(prov, thn, bln, moda_udara)
         if not df_cu.empty:
@@ -613,7 +611,6 @@ def show_report_page():
                 item = prepare_table_item(df_cu, df_pr, df_cc, df_cp, col, label, 'nama_bandara', thn, bln, p_bln, p_thn, table_no=i, prov=prov, moda=moda_udara)
                 all_collected_data.append(item)
 
-        # 2. Kumpulkan Data Moda Transportasi Laut
         moda_laut = "Transportasi Laut"
         df_cu_l, df_pr_l, df_cc_l, df_cp_l, p_bln_l, p_thn_l = get_comparison_data(prov, thn, bln, moda_laut)
         if not df_cu_l.empty:
@@ -626,7 +623,6 @@ def show_report_page():
                 item = prepare_table_item(df_cu_l, df_pr_l, df_cc_l, df_cp_l, col, label, row_col_laut, thn, bln, p_bln_l, p_thn_l, table_no=i, prov=prov, moda=moda_laut)
                 all_collected_data.append(item)
 
-        # 3. Render Tabel Terlebih Dahulu, lalu Sisipkan Narasi di Bawahnya secara Berurutan
         if all_collected_data:
             render_tables_and_narratives(all_collected_data)
 
