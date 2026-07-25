@@ -88,17 +88,16 @@ def normalisasi_entitas(nama):
     
     clean_name = nama.strip()
     
-    # Hapus awalan case-insensitive 'bandara ' atau 'pelabuhan ' jika ada
-    if clean_name.lower().startswith("bandara "):
-        clean_name = clean_name[8:].strip()
-    elif clean_name.lower().startswith("pelabuhan "):
-        clean_name = clean_name[10:].strip()
-        
-    mapping_khusus = {
-        "Nabire": "Douw Aturure"
-    }
-    
-    return mapping_khusus.get(clean_name, clean_name)
+    if moda == "Transportasi Udara":
+        if not clean_name.lower().startswith("bandara "):
+            clean_name = f"Bandara {clean_name}"
+        mapping_khusus = {
+            "Bandara Nabire": "Douw Aturure"
+        }
+        return mapping_khusus.get(clean_name, clean_name)
+    else:
+        # Untuk Transportasi Laut (berbasis Kabupaten/Kota)
+        return clean_name
 
 def build_brs_display_table(report_flat, prov, moda):
     """
