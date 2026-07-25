@@ -17,8 +17,8 @@ INV_MONTH_MAP = {v: k for k, v in MONTH_MAP.items()}
 HIERARKI_BRS = {
     "Papua Tengah": {
         "Transportasi Udara": {
-            "utama": ['Bandara Douw Aturure', 'Bandara Mozes Kilangin'],
-            "lainnya": ['Bandara Enarotali', 'Bandara Zugapa Bilorai', 'Bandara Moanamani', 'Bandara Sinak', 'Bandara Ilaga', 'Bandara Beoga', 'Bandara Mulia'],
+            "utama": ['Douw Aturure', 'Mozes Kilangin'],
+            "lainnya": ['Enarotali', 'Zugapa Bilorai', 'Moanamani', 'Sinak', 'Ilaga', 'Beoga', 'Mulia'],
             "label_subtotal": "Sub Total",
             "label_total": "Total",
             "teks_separator": "Bandara Lainnya"
@@ -40,8 +40,8 @@ HIERARKI_BRS = {
             "teks_separator": "Pelabuhan Lainnya"
         },
         "Transportasi Udara": {
-            "utama": ['Bandara Sentani', 'Bandara Frans Kaisiepo'],
-            "lainnya": ['Bandara Mararena', 'Bandara Stevanus Rumbewas', 'Bandara Kasonaweja'],
+            "utama": ['Sentani', 'Frans Kaisiepo'],
+            "lainnya": ['Mararena', 'Stevanus Rumbewas', 'Kasonaweja'],
             "label_subtotal": "Subtotal",
             "label_total": "Total",
             "teks_separator": "Bandara Lainnya"
@@ -49,8 +49,8 @@ HIERARKI_BRS = {
     },
     "Papua Pegunungan": {
         "Transportasi Udara": {
-            "utama": ['Bandara Wamena', 'Bandara Dekai', 'Bandara Batom'],
-            "lainnya": ['Bandara Oksibil', 'Bandara Karubaga'],
+            "utama": ['Wamena', 'Dekai', 'Batom'],
+            "lainnya": ['Oksibil', 'Karubaga'],
             "label_subtotal": "Total",
             "label_total": "Total Keseluruhan",
             "teks_separator": "Bandara Lainnya"
@@ -65,11 +65,11 @@ HIERARKI_BRS = {
             "teks_separator": "Pelabuhan lainnya"
         },
         "Transportasi Udara": {
-            "utama": ['Bandara Mopah'],
+            "utama": ['Mopah'],
             "lainnya": [
-                'Bandara Okaba', 'Bandara Tanah Merah', 'Bandara Bomakia', 
-                'Bandara Mindiptanah', 'Bandara Kepi', 'Bandara Bade', 
-                'Bandara Ewer', 'Bandara Kamur'
+                'Okaba', 'Tanah Merah', 'Bomakia', 
+                'Mindiptanah', 'Kepi', 'Bade', 
+                'Ewer', 'Kamur'
             ],
             "label_subtotal": "Jumlah",
             "label_total": "Total",
@@ -84,7 +84,7 @@ def normalisasi_entitas(nama):
         return str(nama)
     clean_name = nama.strip()
     mapping_khusus = {
-        "Bandara Nabire": "Bandara Douw Aturure"
+        "Bandara Nabire": "Douw Aturure"
     }
     return mapping_khusus.get(clean_name, clean_name)
 
