@@ -4,7 +4,8 @@ import numpy as np
 import random
 import io
 import docx
-import google.genai as genai
+import os
+from google import genai
 from sqlalchemy import text
 from modules.database import get_engine
 from modules.config import PEMETAAN_WILAYAH
@@ -229,27 +230,100 @@ def _arah_dinamis(pct):
     elif pct < 0: return random.choice(["terkoreksi", "turun", "mengalami penurunan", "menyusut"])
     return "stabil"
 
-def generate_narrative_ai(df_flat, col_target, moda, prov, bln, thn, prev_bln, prev_thn):
-    api_keys = st.secrets.get("API-GEMINI-KEYS") or st.secrets.get("API_GEMINI_KEYS") or st.secrets.get("API_GEMINI_KEY")
-    if not api_keys: return None
-    if isinstance(api_keys, str): api_keys = [api_keys]
-
-    data_str = df_flat.to_markdown()
-    prompt = f"""
-    Bertindaklah sebagai analis data senior di Badan Pusat Statistik (BPS) yang profesional namun komunikatif. 
-    Buatlah tepat 2 paragraf ringkasan naratif dari data tabel statistik di bawah ini. Pisahkan paragraf pertama dan kedua dengan baris kosong ganda (\\n\\n).
-    Konteks Data: Provinsi {prov}, Moda {moda}, Indikator {col_target}, Periode {bln} {thn} vs {prev_bln} {prev_thn}.
-    Tabel Data:\n{data_str}
-    Aturan: Langsung berikan output 2 paragraf teks saja tanpa pengantar/penutup. Format angka sesuai kaidah Indonesia.
+def generate_narrative_ai(
+    df_flat,
+    col_target,
+    moda,
+    prov,
+    bln,
+    thn,
+    prev_bln,
+    prev_thn,
+    model_name="gemini-3.6-flash",
+):
     """
-    for key in api_keys:
-        if not key.strip(): continue
-        try:
-            client = genai.Client(api_key=key.strip())
-            response = client.models.generate_content(model='gemini-1.5-flash', contents=prompt, config=genai.types.GenerateContentConfig(temperature=0.1))
-            if response and response.text: return response.text
-        except Exception: continue
-    return None
+    Membuat narasi 2 paragraf menggunakan Gemini AI.
+    Mengembalikan teks narasi jika berhasil, atau None jika gagal.
+    """
+
+    
+
+    # Ambil API key dari Streamlit Secrets atau environment variable
+    api_key = (
+        st.secrets.get("GEMINI_API_KEY")
+        or st.secrets.get("GOOGLE_API_KEY")
+        or st.secrets.get("API_GEMINI_KEY")
+        or st.secrets.get("API_GEMINI_KEYS")
+        or st.secrets.get("API-GEMINI-KEYS")
+        or os.getenv("GEMINI_API_KEY")
+        or os.getenv("GOOGLE_API_KEY")
+    )
+
+    if not api_key or not str(api_key).strip():
+        st.error(
+            "API key Gemini tidak ditemukan. "
+            "Cek Streamlit Secrets dengan nama GEMINI_API_KEY atau GOOGLE_API_KEY."
+        )
+        return None
+
+    # Siapkan data tabel untuk prompt
+    try:
+        data_str = df_flat.to_markdown(index=True)
+    except Exception:
+        data_str = df_flat.to_string()
+
+    prompt = f"""
+Bertindaklah sebagai analis data senior di Badan Pusat Statistik (BPS) yang profesional namun komunikatif.
+
+Tugas:
+Buat tepat 2 paragraf narasi ringkas dari tabel statistik berikut.
+Pisahkan paragraf pertama dan kedua dengan satu baris kosong.
+
+Konteks:
+- Provinsi: {prov}
+- Moda: {moda}
+- Indikator: {col_target}
+- Periode: {bln} {thn}
+- Pembanding: {prev_bln} {prev_thn}
+
+Data:
+{data_str}
+
+Aturan:
+- Hanya keluarkan 2 paragraf narasi.
+- Jangan tulis judul, pengantar, atau penutup.
+- Gunakan format angka Indonesia.
+- Jangan sebutkan bahwa Anda adalah AI.
+""".strip()
+
+    try:
+        client = genai.Client(api_key=str(api_key).strip())
+
+        response = client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=genai.types.GenerateContentConfig(
+                temperature=0.1,
+                max_output_tokens=512,
+            ),
+        )
+
+        narasi = getattr(response, "text", None)
+        if not narasi:
+            st.warning("Gemini merespons kosong.")
+            return None
+
+        narasi = narasi.strip()
+
+        # Pastikan output tetap 2 paragraf jika model memberi format lain
+        parts = [p.strip() for p in narasi.split("\n\n") if p.strip()]
+        if len(parts) >= 2:
+            return "\n\n".join(parts[:2])
+        return narasi
+
+    except Exception as e:
+        st.error(f"Gagal generate narasi AI: {e}")
+        return None
 
 def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln, thn, prev_bln, prev_thn,
                                 col_prev, col_curr, col_cum_prev, col_cum_curr):
