@@ -1,8 +1,0 @@
-streamlit
-pandas
-plotly
-sqlalchemy
-lxml
-xlrd
-matplotlib
-google.generativeai
