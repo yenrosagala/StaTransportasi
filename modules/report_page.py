@@ -33,14 +33,45 @@ def generate_ai_caption(label, df_report):
         return 'Konfigurasi GEMINI_API_KEYS tidak ditemukan.'
 
     data_str = df_report.to_string()
-    prompt = f"""Anda berperan sebagai penulis publikasi resmi Badan Pusat Statistik (BPS).
+    prompt = f"""
 
-Berdasarkan tabel data '{label}' berikut ini, buatlah satu paragraf ringkasan statistik yang memenuhi ketentuan:
-1. Menjelaskan kondisi utama pada bulan berjalan dibandingkan bulan sebelumnya (M-to-M);
-2. Menjelaskan kondisi kumulatif Januari-bulan berjalan dibandingkan periode yang sama tahun sebelumnya (Y-on-Y);
-3. Panjang ringkasan sekitar 80-120 kata dengan gaya formal BPS.
+Diberikan kumpulan Tabel Data Dinamis berikut:
 
-Data Tabel:\n{data_str}"""
+---
+{label}
+---
+
+Instruksi Tugas:
+Tolong buatkan analisis dan penjelasan resmi untuk masing-masing section/tabel di atas dengan format Laporan Eksekutif Korporat.
+
+Gunakan format output sebagai berikut untuk setiap Section/Tabel:
+
+---
+### 📊 [Nama Section / Judul Tabel]
+
+**1. Tinjauan Eksekutif (Executive Summary):**
+* Sajikan pergerakan utama angka secara agregat/total (Month-on-Month / Period-to-Period).
+* Sebutkan tren utama (apakah terjadi ekspansif/peningkatan atau kontraksi/penurunan).
+
+**2. Anomali & Pendorong Utama (Key Drivers & Highlights):**
+* **Kontributor Pertumbuhan Utama:** Sebutkan entitas/unit dengan kenaikan tertinggi (Sebutkan nama entitas, nilai absolute, dan % lonjakannya).
+* **Kontributor Penurunan / Area Kritis:** Sebutkan entitas/unit dengan penurunan terdistorsif/terdalam (Sebutkan nama entitas, nilai absolute, dan % penurunannya).
+
+**3. Evaluasi Kinerja Kumulatif (Year-to-Date / Cumulative Analysis):**
+* Sajikan analisis tren kumulatif dibandingkan periode tahun/siklus sebelumnya jika ada pada data tabel.
+
+**4. Catatan Strategis Korporat (Strategic Insight):**
+* Berikan 1-2 kalimat simpulan profesional mengenai dampak dinamika data ini terhadap operasional/bisnis secara umum.
+---
+
+Aturan Khusus:
+- Pastikan semua persentase (%) dan angka utama dikutip secara persis dan akurat dari tabel.
+- Jika ada nilai yang bernilai nol (0) atau nihil, sebutkan sebagai "kontraksi total" atau "penhentian aktivitas sementara".
+    
+    
+    
+    
+{data_str}"""
 
     for key in api_keys:
         try:
