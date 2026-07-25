@@ -302,7 +302,7 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
         "- Paragraf pertama fokus pada kinerja bulanan/MTM, arah tren, dan total agregat wilayah utama.\n"
         "- Paragraf kedua fokus pada performa kumulatif YTD/YOY, proyeksi pertumbuhan, dan deviasi signifikan antar wilayah.\n"
         "- Gunakan bahasa formal, tajam, analitis, format angka Indonesia.\n"
-        "- Jangan berikan pengantar atau penutup, langsung berikan 2 paragraf teks yang dipisahkan oleh satu baris kosong (\\n\\n).\n\n"
+       
         "Data Tabel:\n"
         f"{data_str}"
     )
