@@ -65,7 +65,7 @@ HIERARKI_BRS = {
             "teks_separator": "Pelabuhan lainnya"
         },
         "Transportasi Udara": {
-            "utama": ['Mopah'],
+            "utama": ['Moppah'],
             "lainnya": [
                 'Okaba', 'Tanah Merah', 'Bomakia', 
                 'Mindiptanah', 'Kepi', 'Bade', 
