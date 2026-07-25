@@ -78,7 +78,7 @@ HIERARKI_BRS = {
     }
 }
 
-def normalisasi_entitas(nama):
+def normalisasi_entitas(nama,moda):
     """
     Membersihkan kata 'Bandara ' atau 'Pelabuhan ' dari database 
     agar cocok dengan konfigurasi hierarki BRS.
