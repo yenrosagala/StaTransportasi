@@ -403,6 +403,7 @@ def create_complete_master_word_report(prov, thn, bln, all_report_data):
                 hdr_row_0.cells[j].text = str(col_tuple).strip()
                 hdr_row_1.cells[j].text = ""
 
+        # Mencegah merge berlebihan; batasi hanya pada header utama yang bersesuaian tanpa lebih dari satu line acak
         try:
             hdr_row_0.cells[0].merge(hdr_row_1.cells[0])
             if total_cols >= 4:
@@ -412,19 +413,31 @@ def create_complete_master_word_report(prov, thn, bln, all_report_data):
         except Exception:
             pass
 
+        # Melacak string yang sama agar jika ada duplikasi konten, hanya disisakan satu saja di awal
+        seen_row_contents = set()
+
         for i, row_data in enumerate(df_to_export.values):
             row_cells = table.rows[i + 2].cells
             first_col_val = str(row_data[0]) if not pd.isna(row_data[0]) else ""
             is_separator_row = "lainnya" in first_col_val.lower()
             
-            for j, val in enumerate(row_data):
+            # Cek duplikasi string yang sama persis antar baris non-data utama (misal label berulang)
+            row_signature = tuple(str(v) for v in row_data)
+            if not is_separator_row and row_signature in seen_row_contents and ("subtotal" in first_col_val.lower() or "total" in first_col_val.lower()):
+                # Kosongkan konten teks jika baris identik sudah pernah dimuat sebelumnya
+                row_data_cleaned = [""] * len(row_data)
+            else:
+                seen_row_contents.add(row_signature)
+                row_data_cleaned = row_data
+
+            for j, val in enumerate(row_data_cleaned):
                 if j == 0:
-                    row_cells[j].text = first_col_val
+                    row_cells[j].text = str(val) if not pd.isna(val) else ""
                 else:
                     if is_separator_row:
                         row_cells[j].text = ""
                     else:
-                        row_cells[j].text = format_id_number(val, decimals=2)
+                        row_cells[j].text = format_id_number(val, decimals=2) if val != "" else ""
             
             if is_separator_row and total_cols > 1:
                 try:
