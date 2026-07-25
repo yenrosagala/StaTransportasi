@@ -6,3 +6,4 @@ lxml
 xlrd
 google.genai
 tabulate
+matplotlib
