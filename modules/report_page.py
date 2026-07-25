@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import random
+import io
+import docx
 import google.genai as genai
 from sqlalchemy import text
 from modules.database import get_engine
@@ -78,10 +80,10 @@ HIERARKI_BRS = {
     }
 }
 
-def normalisasi_entitas(nama,moda):
+def normalisasi_entitas(nama, moda):
     """
-    Membersihkan kata 'Bandara ' atau 'Pelabuhan ' dari database 
-    agar cocok dengan konfigurasi hierarki BRS.
+    Membersihkan dan menyeragamkan nama entitas agar cocok dengan HIERARKI_BRS.
+    Menggunakan pencocokan case-insensitive agar tidak gagal membaca data dari database.
     """
     if not isinstance(nama, str):
         return str(nama)
@@ -89,13 +91,16 @@ def normalisasi_entitas(nama,moda):
     clean_name = nama.strip()
     
     if moda == "Transportasi Udara":
-       
+        if clean_name.lower().startswith("bandara "):
+            clean_name = clean_name[8:].strip()
         mapping_khusus = {
-            "Bandara Nabire": "Douw Aturure"
+            "Nabire": "Douw Aturure"
         }
         return mapping_khusus.get(clean_name, clean_name)
     else:
-        # Untuk Transportasi Laut (berbasis Kabupaten/Kota)
+        # Untuk Transportasi Laut (membersihkan awalan 'Pelabuhan ' jika ada)
+        if clean_name.lower().startswith("pelabuhan "):
+            clean_name = clean_name[10:].strip()
         return clean_name
 
 def build_brs_display_table(report_flat, prov, moda):
@@ -110,7 +115,7 @@ def build_brs_display_table(report_flat, prov, moda):
     df = df.reset_index()
     row_col = df.columns[0]
     
-    # Kirim parameter moda agar normalisasinya tepat sasaran
+    # Normalisasi entitas dengan memegang referensi moda
     df[row_col] = df[row_col].apply(lambda x: normalisasi_entitas(x, moda))
     df = df.groupby(row_col).sum(min_count=1).reset_index() 
     
@@ -120,10 +125,14 @@ def build_brs_display_table(report_flat, prov, moda):
     if prov in HIERARKI_BRS and moda in HIERARKI_BRS[prov]:
         config = HIERARKI_BRS[prov][moda]
         
-        df_utama = df[df[row_col].isin(config["utama"])].copy()
+        # Buat pencocokan case-insensitive untuk key 'utama' dan 'lainnya'
+        df['match_key'] = df[row_col].astype(str).str.lower()
+        utama_lower = [str(x).lower() for x in config["utama"]]
+        lainnya_lower = [str(x).lower() for x in config["lainnya"]]
+        
+        df_utama = df[df['match_key'].isin(utama_lower)].copy()
         if not df_utama.empty:
-            df_utama[row_col] = pd.Categorical(df_utama[row_col], categories=config["utama"], ordered=True)
-            df_utama = df_utama.sort_values(row_col)
+            df_utama = df_utama.drop(columns=['match_key'])
             potongan.append(df_utama)
             
             if len(config["lainnya"]) > 0:
@@ -134,14 +143,13 @@ def build_brs_display_table(report_flat, prov, moda):
         if len(config["lainnya"]) > 0:
             separator = pd.DataFrame([{row_col: config["teks_separator"]}])
             for c in df.columns: 
-                if c != row_col: 
+                if c != row_col and c != 'match_key': 
                     separator[c] = np.nan
             potongan.append(separator)
             
-            df_lain = df[df[row_col].isin(config["lainnya"])].copy()
+            df_lain = df[df['match_key'].isin(lainnya_lower)].copy()
             if not df_lain.empty:
-                df_lain[row_col] = pd.Categorical(df_lain[row_col], categories=config["lainnya"], ordered=True)
-                df_lain = df_lain.sort_values(row_col)
+                df_lain = df_lain.drop(columns=['match_key'])
                 potongan.append(df_lain)
                 
                 sub_lain = pd.DataFrame(df_lain[raw_cols].sum()).T
@@ -149,8 +157,13 @@ def build_brs_display_table(report_flat, prov, moda):
                 potongan.append(sub_lain)
                 
         if not potongan and not df.empty:
+            # Pengaman jika filter kosong, hapus kolom bantuan lalu masukkan apa adanya
+            if 'match_key' in df.columns:
+                df = df.drop(columns=['match_key'])
             potongan.append(df)
     else:
+        if 'match_key' in df.columns:
+            df = df.drop(columns=['match_key'])
         potongan.append(df)
         
     if not total_row.empty:
@@ -181,7 +194,7 @@ def build_brs_display_table(report_flat, prov, moda):
     res['Y-on-Y (%)'] = pd.Series(yoy_res, index=res.index).replace([np.inf, -np.inf], np.nan)
     
     return res[[col_prev, col_curr, 'M-to-M (%)', col_cum_prev, col_cum_curr, 'Y-on-Y (%)']]
-  
+
 def get_comparison_data(prov, thn, bln, moda):
     table = "transportasi_udara" if moda == "Transportasi Udara" else "transportasi_laut"
     bln_num = MONTH_MAP[bln]
@@ -367,6 +380,46 @@ def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln
 
     return para1, para2
 
+def create_word_report(title, narrative_p1, narrative_p2, df_table):
+    doc = docx.Document()
+    doc.add_heading(title, level=1)
+    
+    if narrative_p1:
+        doc.add_paragraph(narrative_p1)
+        doc.add_paragraph()
+        
+    if df_table is not None and not df_table.empty:
+        doc.add_heading("Tabel Perkembangan Data", level=2)
+        df_to_export = df_table.reset_index()
+        
+        rows = len(df_to_export) + 1
+        cols = len(df_to_export.columns)
+        table = doc.add_table(rows=rows, cols=cols)
+        table.style = 'Table Grid'
+        
+        hdr_cells = table.rows[0].cells
+        for j, col in enumerate(df_to_export.columns):
+            if isinstance(col, tuple):
+                col_name = " - ".join([str(c) for c in col if str(c).strip()])
+            else:
+                col_name = str(col)
+            hdr_cells[j].text = col_name
+            
+        for i, row_data in enumerate(df_to_export.values):
+            row_cells = table.rows[i + 1].cells
+            for j, val in enumerate(row_data):
+                row_cells[j].text = "" if pd.isna(val) else str(val)
+                
+        doc.add_paragraph()
+
+    if narrative_p2:
+        doc.add_paragraph(narrative_p2)
+        
+    file_stream = io.BytesIO()
+    doc.save(file_stream)
+    file_stream.seek(0)
+    return file_stream
+
 def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, label, row_col, thn, bln, prev_bln, prev_thn, table_no=None, prov=None, moda=None):
     curr_grp = df_curr.groupby(row_col)[col_target].sum()
     prev_grp = df_prev.groupby(row_col)[col_target].sum()
@@ -387,7 +440,7 @@ def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, 
     report['M-to-M (%)'] = pd.Series(mtm_pct, index=report.index).replace([np.inf, -np.inf], np.nan)
 
     report[col_cum_prev] = cum_prev_grp.reindex(report.index).fillna(0)
-    report[col_cum_curr] = cum_curr_grp.reindex(report.index).fillna(0)
+    report[col_cum_curr] = cum_cum_grp.reindex(report.index).fillna(0)
     
     cum_prev_vals = report[col_cum_prev].values
     cum_curr_vals = report[col_cum_curr].values
@@ -473,6 +526,23 @@ def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, 
     if para2_text:
         st.markdown(para2_text)
 
+    # --- Tombol Download Word Per Tabel / Indikator ---
+    title_report = f"Laporan {label} {angkutan} Provinsi {prov} - {bln} {thn}"
+    word_file = create_word_report(
+        title=title_report,
+        narrative_p1=para1_text,
+        narrative_p2=para2_text,
+        df_table=report_display
+    )
+    
+    st.download_button(
+        label=f"📥 Download Laporan {label} (Word)",
+        data=word_file,
+        file_name=f"Laporan_{label.replace(' ', '_')}_{prov}_{bln}_{thn}.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        key=f"download_btn_{table_no}_{col_target}"
+    )
+
     st.markdown("---")
 
 def show_report_page():
@@ -503,79 +573,3 @@ def show_report_page():
         
         for i, (col, label) in enumerate(targets, start=1):
             format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col, label, row_col, thn, bln, prev_bln, prev_thn, table_no=i, prov=prov, moda=moda)
-
-import io
-import docx
-from docx.shared import Inches, Pt
-
-def create_word_report(title, narrative_p1, narrative_p2, df_table):
-    doc = docx.Document()
-    
-    # Judul Dokumen
-    doc.add_heading(title, level=1)
-    
-    # Paragraf Narasi Pertama
-    if narrative_p1:
-        doc.add_paragraph(narrative_p1)
-        doc.add_paragraph() # Spasi kosong
-        
-    # Masukkan Tabel Data (jika ada)
-    if df_table is not None and not df_table.empty:
-        doc.add_heading("Tabel Perkembangan Data", level=2)
-        
-        # Konversi DataFrame ke Tabel Word
-        # Reset index agar kolom indeks (nama bandara/kabupaten) ikut masuk ke tabel
-        df_to_export = df_table.reset_index()
-        
-        # Buat tabel dengan baris tambahan untuk header
-        rows = len(df_to_export) + 1
-        cols = len(df_to_export.columns)
-        table = doc.add_table(rows=rows, cols=cols)
-        table.style = 'Table Grid'
-        
-        # Tulis Header (Tangani MultiIndex jika ada dengan menggabungkan tuple kolom)
-        hdr_cells = table.rows[0].cells
-        for j, col in enumerate(df_to_export.columns):
-            if isinstance(col, tuple):
-                col_name = " - ".join([str(c) for c in col if str(c).strip()])
-            else:
-                col_name = str(col)
-            hdr_cells[j].text = col_name
-            
-        # Tulis Isi Data Baris per Baris
-        for i, row_data in enumerate(df_to_export.values):
-            row_cells = table.rows[i + 1].cells
-            for j, val in enumerate(row_data):
-                row_cells[j].text = "" if pd.isna(val) else str(val)
-                
-        doc.add_paragraph() # Spasi kosong
-
-    # Paragraf Narasi Kedua
-    if narrative_p2:
-        doc.add_paragraph(narrative_p2)
-        
-    # Simpan ke objek BytesIO agar bisa dibaca oleh st.download_button
-    file_stream = io.BytesIO()
-    doc.save(file_stream)
-    file_stream.seek(0)
-    
-    return file_stream
-
-# Setelah tabel dan narasi selesai ditampilkan di UI:
-    title_report = f"Laporan Perkembangan Transportasi Provinsi {prov} - {bln} {thn}"
-    
-    # Buat file Word di memori
-    word_file = create_word_report(
-        title=title_report,
-        narrative_p1=para1_text,
-        narrative_p2=para2_text,
-        df_table=report_display  # DataFrame yang akan di-export
-    )
-    
-    # Tampilkan Tombol Download di Streamlit
-    st.download_button(
-        label="📥 Download Laporan (Word)",
-        data=word_file,
-        file_name=f"Laporan_Transportasi_{prov}_{bln}_{thn}.docx",
-        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    )
