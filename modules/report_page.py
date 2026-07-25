@@ -516,3 +516,79 @@ def show_report_page():
         
         for i, (col, label) in enumerate(targets, start=1):
             format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col, label, row_col, thn, bln, prev_bln, prev_thn, table_no=i, prov=prov, moda=moda)
+
+import io
+import docx
+from docx.shared import Inches, Pt
+
+def create_word_report(title, narrative_p1, narrative_p2, df_table):
+    doc = docx.Document()
+    
+    # Judul Dokumen
+    doc.add_heading(title, level=1)
+    
+    # Paragraf Narasi Pertama
+    if narrative_p1:
+        doc.add_paragraph(narrative_p1)
+        doc.add_paragraph() # Spasi kosong
+        
+    # Masukkan Tabel Data (jika ada)
+    if df_table is not None and not df_table.empty:
+        doc.add_heading("Tabel Perkembangan Data", level=2)
+        
+        # Konversi DataFrame ke Tabel Word
+        # Reset index agar kolom indeks (nama bandara/kabupaten) ikut masuk ke tabel
+        df_to_export = df_table.reset_index()
+        
+        # Buat tabel dengan baris tambahan untuk header
+        rows = len(df_to_export) + 1
+        cols = len(df_to_export.columns)
+        table = doc.add_table(rows=rows, cols=cols)
+        table.style = 'Table Grid'
+        
+        # Tulis Header (Tangani MultiIndex jika ada dengan menggabungkan tuple kolom)
+        hdr_cells = table.rows[0].cells
+        for j, col in enumerate(df_to_export.columns):
+            if isinstance(col, tuple):
+                col_name = " - ".join([str(c) for c in col if str(c).strip()])
+            else:
+                col_name = str(col)
+            hdr_cells[j].text = col_name
+            
+        # Tulis Isi Data Baris per Baris
+        for i, row_data in enumerate(df_to_export.values):
+            row_cells = table.rows[i + 1].cells
+            for j, val in enumerate(row_data):
+                row_cells[j].text = "" if pd.isna(val) else str(val)
+                
+        doc.add_paragraph() # Spasi kosong
+
+    # Paragraf Narasi Kedua
+    if narrative_p2:
+        doc.add_paragraph(narrative_p2)
+        
+    # Simpan ke objek BytesIO agar bisa dibaca oleh st.download_button
+    file_stream = io.BytesIO()
+    doc.save(file_stream)
+    file_stream.seek(0)
+    
+    return file_stream
+
+# Setelah tabel dan narasi selesai ditampilkan di UI:
+    title_report = f"Laporan Perkembangan Transportasi Provinsi {prov} - {bln} {thn}"
+    
+    # Buat file Word di memori
+    word_file = create_word_report(
+        title=title_report,
+        narrative_p1=para1_text,
+        narrative_p2=para2_text,
+        df_table=report_display  # DataFrame yang akan di-export
+    )
+    
+    # Tampilkan Tombol Download di Streamlit
+    st.download_button(
+        label="📥 Download Laporan (Word)",
+        data=word_file,
+        file_name=f"Laporan_Transportasi_{prov}_{bln}_{thn}.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
