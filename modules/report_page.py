@@ -56,7 +56,7 @@ def generate_narrative_ai(df_flat, col_target, moda, prov, bln, thn, prev_bln, p
     Menghasilkan narasi bergaya BRS BPS dengan memanggil API Gemini.
     Otomatis melakukan rotasi API Key jika terjadi limit/error.
     """
-    api_keys = st.secrets["API-GEMINI-KEYS"]
+    api_keys = st.secrets["GEMINI_API_KEYS"]
     
     # Konversi dataframe ke format string/markdown agar mudah dibaca oleh AI
     data_str = df_flat.to_markdown()
