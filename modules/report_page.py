@@ -195,7 +195,7 @@ def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, 
         col_prev, col_curr, col_cum_prev, col_cum_curr
     )
     st.markdown(para1)
-    st.markdown(para2)
+
 
     if table_no is not None:
         judul = f"Tabel {table_no} Perkembangan {label} {angkutan} Dalam Negeri Provinsi {prov}, {bln} {thn}"
@@ -216,6 +216,7 @@ def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, 
     pct_cols = [(label, 'M-to-M (%)'), (cum_label, 'Y-on-Y (%)')]
 
     st.dataframe(report.style.format(format_id_number).background_gradient(subset=pct_cols, cmap='RdYlGn'))
+    st.markdown(para2)
 
 def show_report_page():
     st.title("📋 Laporan Komparatif Strategis")
