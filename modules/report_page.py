@@ -295,6 +295,20 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
 
     data_str = df_flat.to_markdown(index=False)
     
+    def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln, prev_thn, model_name="gemini-2.5-flash"):
+    cache_key = get_cache_key(prov, moda, label, bln, thn)
+    ensure_narasi_cache()
+    cache = st.session_state["narasi_cache"]
+    
+    if cache_key in cache:
+        return cache[cache_key], "Cache"
+
+    api_keys = get_gemini_api_keys()
+    if not api_keys:
+        return None, "No API Key"
+
+    data_str = df_flat.to_markdown(index=False)
+    
     prompt = (
         "Bertindaklah sebagai Kepala Pusat Statistik yang menyusun Executive Summary eksekutif untuk Dewan Pimpinan dan Pengambil Kebijakan.\n"
         f"Buat ringkasan naratif tingkat tinggi (executive summary) tepat 2 paragraf untuk indikator \"{label}\" pada moda {moda} di Provinsi {prov} ({bln} {thn} dibanding {prev_bln} {prev_thn}).\n\n"
@@ -306,6 +320,24 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
         "Data Tabel:\n"
         f"{data_str}"
     )
+
+    for key in api_keys:
+        try:
+            client = genai.Client(api_key=key.strip())
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=genai.types.GenerateContentConfig(temperature=0.2, max_output_tokens=1024)
+            )
+            raw_text = getattr(response, "text", None)
+            if raw_text and str(raw_text).strip():
+                text_clean = str(raw_text).strip()
+                cache[cache_key] = text_clean
+                return text_clean, "Gemini AI"
+        except Exception:
+            continue
+            
+    return None, "Failed"
 
     for key in api_keys:
         try:
@@ -529,7 +561,7 @@ def format_and_render_single_table(df_curr, df_prev, df_cum_curr, df_cum_prev, c
     angkutan = "Angkutan Udara" if moda == "Transportasi Udara" else "Angkutan Laut"
     judul = f"Tabel {table_no} Perkembangan {label} {angkutan} Dalam Negeri Provinsi {prov}, {bln} {thn}"
     st.markdown(f"**{judul}**")
-    st.dataframe(styled_df, use_container_width=True)
+    st.dataframe(styled_df, width='stretch)
 
     # Generate Narasi Satu-Satu secara Berurutan hingga Selesai
     region_label = "Bandara" if moda == "Transportasi Udara" else "Pelabuhan/Kabupaten"
