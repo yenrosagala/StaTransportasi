@@ -199,7 +199,7 @@ def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, 
     report['M-to-M (%)'] = ((report[col_curr] - report[col_prev]) / report[col_prev] * 100).replace([np.inf, -np.inf], np.nan)
 
     report[col_cum_prev] = cum_prev_grp
-    report[col_cum_curr] = cum_cum_curr
+    report[col_cum_curr] = cum_curr_grp
     report['Y-on-Y (%)'] = ((report[col_cum_curr] - report[col_cum_prev]) / report[col_cum_prev] * 100).replace([np.inf, -np.inf], np.nan)
 
     report = report.fillna(0)
