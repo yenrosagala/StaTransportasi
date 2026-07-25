@@ -26,7 +26,7 @@ def show_dashboard_page():
         }
         variabel = st.selectbox("Indikator Utama", var_options[moda])
 
-    # --- QUERY DATA ---
+    # --- QUERY DATA BERDASARKAN FILTER ---
     table = "transportasi_udara" if moda == "Transportasi Udara" else "transportasi_laut"
     engine = get_engine()
     
@@ -52,12 +52,12 @@ def show_dashboard_page():
     df = df.sort_values(['tahun_int', 'month_num'])
     df['periode'] = df['bulan'] + " " + df['tahun'].astype(str)
 
-    # --- KPI METRICS ---
-    st.markdown("### 📌 Ringkasan KPI")
+    # --- KPI METRICS (MENYESUAIKAN FILTER) ---
+    st.markdown(f"### 📌 Ringkasan KPI ({kabupaten if kabupaten != 'SEMUA' else provinsi})")
     kpi1, kpi2, kpi3 = st.columns(3)
     
     with kpi1:
-        # Menghitung jumlah titik lokasi unik (misal: nama_bandara atau nama_pelabuhan jika ada di kolom, atau nama_kabkota)
+        # Menghitung jumlah titik lokasi/fasilitas unik berdasarkan filter aktif
         kolom_lokasi = 'nama_bandara' if moda == "Transportasi Udara" else 'nama_pelabuhan'
         if kolom_lokasi in df.columns:
             jml_titik = df[kolom_lokasi].nunique()
