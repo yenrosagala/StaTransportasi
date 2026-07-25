@@ -65,8 +65,12 @@ HIERARKI_BRS = {
             "teks_separator": "Pelabuhan lainnya"
         },
         "Transportasi Udara": {
-            "utama": ['Mopah'],
-            "lainnya": ['Okaba', 'Tanah Merah', 'Bomakia', 'Mindiptanah', 'Kepi', 'Bade', 'Ewer', 'Kamur'],
+            "utama": ['Bandara Mopah'],
+            "lainnya": [
+                'Bandara Okaba', 'Bandara Tanah Merah', 'Bandara Bomakia', 
+                'Bandara Mindiptanah', 'Bandara Kepi', 'Bandara Bade', 
+                'Bandara Ewer', 'Bandara Kamur'
+            ],
             "label_subtotal": "Jumlah",
             "label_total": "Total",
             "teks_separator": "Bandara lainnya"
