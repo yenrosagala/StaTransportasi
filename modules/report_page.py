@@ -17,8 +17,8 @@ INV_MONTH_MAP = {v: k for k, v in MONTH_MAP.items()}
 HIERARKI_BRS = {
     "Papua Tengah": {
         "Transportasi Udara": {
-            "utama": ['Douw Aturure', 'Mozes Kilangin'],
-            "lainnya": ['Enarotali', 'Zugapa Bilorai', 'Moanamani', 'Sinak', 'Ilaga', 'Beoga', 'Mulia'],
+            "utama": ['Bandara Douw Aturure', 'Bandara Mozes Kilangin'],
+            "lainnya": ['Bandara Enarotali', 'Bandara Zugapa Bilorai', 'Bandara Moanamani', 'Bandara Sinak', 'Bandara Ilaga', 'Bandara Beoga', 'Bandara Mulia'],
             "label_subtotal": "Sub Total",
             "label_total": "Total",
             "teks_separator": "Bandara Lainnya"
@@ -40,8 +40,8 @@ HIERARKI_BRS = {
             "teks_separator": "Pelabuhan Lainnya"
         },
         "Transportasi Udara": {
-            "utama": ['Sentani', 'Frans Kaisiepo'],
-            "lainnya": ['Mararena', 'Stevanus Rumbewas', 'Kasonaweja'],
+            "utama": ['Bandara Sentani', 'Bandara Frans Kaisiepo'],
+            "lainnya": ['Bandara Mararena', 'Bandara Stevanus Rumbewas', 'Bandara Kasonaweja'],
             "label_subtotal": "Subtotal",
             "label_total": "Total",
             "teks_separator": "Bandara Lainnya"
@@ -49,8 +49,8 @@ HIERARKI_BRS = {
     },
     "Papua Pegunungan": {
         "Transportasi Udara": {
-            "utama": ['Wamena', 'Dekai', 'Batom'],
-            "lainnya": ['Oksibil', 'Karubaga'],
+            "utama": ['Bandara Wamena', 'Bandara Dekai', 'Bandara Batom'],
+            "lainnya": ['Bandara Oksibil', 'Bandara Karubaga'],
             "label_subtotal": "Total",
             "label_total": "Total Keseluruhan",
             "teks_separator": "Bandara Lainnya"
@@ -79,32 +79,19 @@ HIERARKI_BRS = {
 }
 
 def normalisasi_entitas(nama):
-    """
-    Membersihkan kata 'Bandara' atau 'Pelabuhan' dari database agar cocok dengan list HIERARKI_BRS.
-    """
+    """Mempertahankan nama entitas apa adanya sesuai database."""
     if not isinstance(nama, str):
         return str(nama)
-    
     clean_name = nama.strip()
-    if clean_name.lower().startswith("bandara "):
-        clean_name = clean_name[8:].strip()
-    elif clean_name.lower().startswith("pelabuhan "):
-        clean_name = clean_name[10:].strip()
-        
     mapping_khusus = {
-        "Nabire": "Douw Aturure"
+        "Bandara Nabire": "Bandara Douw Aturure"
     }
-    
     return mapping_khusus.get(clean_name, clean_name)
 
 def build_brs_display_table(report_flat, prov, moda):
-    """
-    Menyusun ulang dataframe menjadi bentuk hierarki BRS (ada Subtotal & Total)
-    Dilengkapi pengaman agar baris data tidak kosong jika nama kolom/entitas bervariasi.
-    """
+    """Menyusun ulang dataframe menjadi bentuk hierarki BRS (ada Subtotal & Total)[cite: 2, 4]."""
     df = report_flat.copy()
     
-    # Pisahkan Grand Total asli
     if 'TOTAL' in df.index:
         total_row = df.loc[['TOTAL']]
         df = df.drop(index='TOTAL')
@@ -114,25 +101,21 @@ def build_brs_display_table(report_flat, prov, moda):
     df = df.reset_index()
     row_col = df.columns[0]
     
-    # Terapkan Normalisasi Nama
     df[row_col] = df[row_col].apply(normalisasi_entitas)
     df = df.groupby(row_col).sum(min_count=1).reset_index() 
     
     raw_cols = [c for c in df.columns if '(%)' not in c and c != row_col]
     potongan = []
     
-    # Periksa apakah konfigurasi provinsi & moda tersedia di HIERARKI_BRS
     if prov in HIERARKI_BRS and moda in HIERARKI_BRS[prov]:
         config = HIERARKI_BRS[prov][moda]
         
-        # Kelompok Utama
         df_utama = df[df[row_col].isin(config["utama"])].copy()
         if not df_utama.empty:
             df_utama[row_col] = pd.Categorical(df_utama[row_col], categories=config["utama"], ordered=True)
             df_utama = df_utama.sort_values(row_col)
             potongan.append(df_utama)
             
-        # Kelompok Lainnya
         if len(config["lainnya"]) > 0 and not df_utama.empty:
             sub_utama = pd.DataFrame(df_utama[raw_cols].sum()).T
             sub_utama[row_col] = config["label_subtotal"]
@@ -151,13 +134,11 @@ def build_brs_display_table(report_flat, prov, moda):
                 
                 potongan.extend([sub_utama, separator, df_lain, sub_lain])
         
-        # PENGAMAN: Jika kelompok utama & lainnya kosong tapi data aslinya ada, tampilkan apa adanya
         if not potongan and not df.empty:
             potongan.append(df)
     else:
         potongan.append(df)
         
-    # Gabungkan kembali Grand Total
     if not total_row.empty:
         t_label = HIERARKI_BRS.get(prov, {}).get(moda, {}).get("label_total", "TOTAL")
         total_row = total_row.reset_index()
@@ -216,7 +197,7 @@ def get_comparison_data(prov, thn, bln, moda):
     return df_curr, df_prev, df_cum_curr, df_cum_prev, prev_bln_name, prev_thn
 
 def format_id_number(x, decimals=2):
-    """Format angka konvensi Indonesia, menangkap NaN/Inf menjadi Undefined."""
+    """Format angka konvensi Indonesia, menangkap NaN/Inf menjadi Undefined[cite: 2, 4]."""
     if pd.isna(x) or str(x).lower() in ['nan', 'inf', '-inf', 'undefined']:
         return "Undefined"
     try:
@@ -496,8 +477,8 @@ def show_report_page():
             st.warning("Tidak ada data untuk periode terpilih.")
             return
 
-        # PERBAIKAN: Penentuan kolom baris disesuaikan dengan moda transportasi
-        row_col = 'nama_bandara' if moda == 'Transportasi Udara' else 'nama_pelabuhan'
+        # Mengarahkan baris entitas: Transportasi Udara menggunakan 'nama_bandara', Transportasi Laut menggunakan 'nama_kabkota'[cite: 2, 4]
+        row_col = 'nama_bandara' if moda == 'Transportasi Udara' else 'nama_kabkota'
         
         targets = [
             ('penumpang_datang', 'Penumpang Datang'), ('penumpang_berangkat', 'Penumpang Berangkat'),
