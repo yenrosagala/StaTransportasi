@@ -241,32 +241,47 @@ def generate_narrative_ai(
     prev_thn,
     model_name="gemini-3.6-flash",
 ):
-    """
-    Membuat narasi 2 paragraf menggunakan Gemini AI.
-    Mengembalikan teks narasi jika berhasil, atau None jika gagal.
-    """
+    import os
+    import streamlit as st
+    from google import genai
 
-    
+    def _as_list(value):
+        if not value:
+            return []
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, (list, tuple)):
+            return [str(x).strip() for x in value if str(x).strip()]
+        return [str(value).strip()]
 
-    # Ambil API key dari Streamlit Secrets atau environment variable
-    api_key = (
-        st.secrets.get("GEMINI_API_KEY")
-        or st.secrets.get("GOOGLE_API_KEY")
-        or st.secrets.get("API_GEMINI_KEY")
-        or st.secrets.get("API_GEMINI_KEYS")
-        or st.secrets.get("API-GEMINI-KEYS")
-        or os.getenv("GEMINI_API_KEY")
-        or os.getenv("GOOGLE_API_KEY")
-    )
+    api_keys = []
 
-    if not api_key or not str(api_key).strip():
+    # 1) Dari Streamlit Secrets
+    try:
+        api_keys.extend(_as_list(st.secrets.get("GEMINI_API_KEYS")))
+        api_keys.extend(_as_list(st.secrets.get("GEMINI_API_KEY")))
+        api_keys.extend(_as_list(st.secrets.get("GOOGLE_API_KEY")))
+        api_keys.extend(_as_list(st.secrets.get("API_GEMINI_KEYS")))
+        api_keys.extend(_as_list(st.secrets.get("API_GEMINI_KEY")))
+    except Exception:
+        pass
+
+    # 2) Dari environment variable
+    env_single = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if env_single:
+        api_keys.append(env_single)
+
+    # Hapus duplikat, pertahankan urutan
+    seen = set()
+    api_keys = [k for k in api_keys if not (k in seen or seen.add(k))]
+
+    if not api_keys:
         st.error(
             "API key Gemini tidak ditemukan. "
-            "Cek Streamlit Secrets dengan nama GEMINI_API_KEY atau GOOGLE_API_KEY."
+            "Pastikan secrets memakai nama GEMINI_API_KEYS atau GEMINI_API_KEY."
         )
         return None
 
-    # Siapkan data tabel untuk prompt
     try:
         data_str = df_flat.to_markdown(index=True)
     except Exception:
@@ -296,34 +311,34 @@ Aturan:
 - Jangan sebutkan bahwa Anda adalah AI.
 """.strip()
 
-    try:
-        client = genai.Client(api_key=str(api_key).strip())
+    last_error = None
 
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config=genai.types.GenerateContentConfig(
-                temperature=0.1,
-                max_output_tokens=512,
-            ),
-        )
+    for key in api_keys:
+        try:
+            client = genai.Client(api_key=str(key).strip())
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=genai.types.GenerateContentConfig(
+                    temperature=0.1,
+                    max_output_tokens=512,
+                ),
+            )
 
-        narasi = getattr(response, "text", None)
-        if not narasi:
-            st.warning("Gemini merespons kosong.")
-            return None
+            narasi = getattr(response, "text", None)
+            if narasi and str(narasi).strip():
+                narasi = str(narasi).strip()
+                parts = [p.strip() for p in narasi.split("\n\n") if p.strip()]
+                if len(parts) >= 2:
+                    return "\n\n".join(parts[:2])
+                return narasi
 
-        narasi = narasi.strip()
+        except Exception as e:
+            last_error = e
+            continue
 
-        # Pastikan output tetap 2 paragraf jika model memberi format lain
-        parts = [p.strip() for p in narasi.split("\n\n") if p.strip()]
-        if len(parts) >= 2:
-            return "\n\n".join(parts[:2])
-        return narasi
-
-    except Exception as e:
-        st.error(f"Gagal generate narasi AI: {e}")
-        return None
+    st.error(f"Gagal generate narasi AI. Error terakhir: {last_error}")
+    return None
 
 def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln, thn, prev_bln, prev_thn,
                                 col_prev, col_curr, col_cum_prev, col_cum_curr):
