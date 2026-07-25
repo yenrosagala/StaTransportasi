@@ -294,8 +294,7 @@ def generate_narrative_ai(df_flat, col_target, moda, prov, bln, thn, prev_bln, p
     return None
 
 with st.spinner(f"Menyusun narasi untuk indikator {label} menggunakan AI..."):
-    narasi_ai = generate_narrative_ai(report_display_brs, label, moda, prov, bln, thn, prev_bln, prev_thn)
-    
+  narasi_ai = generate_narrative_ai(report_display_brs, label, moda, prov, bln, thn, prev_bln, prev_thn)
   if narasi_ai is None:
       # Hanya dijalankan jika seluruh API key gagal atau tidak ditemukan
       p1, p2 = generate_narrative_fallback(
