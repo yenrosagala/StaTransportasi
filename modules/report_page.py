@@ -100,13 +100,8 @@ def normalisasi_entitas(nama):
         return clean_name
 
 def build_brs_display_table(report_flat, prov, moda):
-    """
-    Menyusun ulang dataframe menjadi bentuk hierarki BPS yang presisi 
-    (Utama -> Subtotal -> Separator -> Lainnya -> Subtotal/Jumlah -> Grand Total).
-    """
     df = report_flat.copy()
     
-    # Pisahkan Grand Total asli
     if 'TOTAL' in df.index:
         total_row = df.loc[['TOTAL']]
         df = df.drop(index='TOTAL')
@@ -116,8 +111,8 @@ def build_brs_display_table(report_flat, prov, moda):
     df = df.reset_index()
     row_col = df.columns[0]
     
-    # Normalisasi nama entitas
-    df[row_col] = df[row_col].apply(normalisasi_entitas)
+    # Kirim parameter moda agar normalisasinya tepat sasaran
+    df[row_col] = df[row_col].apply(lambda x: normalisasi_entitas(x, moda))
     df = df.groupby(row_col).sum(min_count=1).reset_index() 
     
     raw_cols = [c for c in df.columns if '(%)' not in c and c != row_col]
@@ -126,20 +121,17 @@ def build_brs_display_table(report_flat, prov, moda):
     if prov in HIERARKI_BRS and moda in HIERARKI_BRS[prov]:
         config = HIERARKI_BRS[prov][moda]
         
-        # 1. Kelompok Utama (Bandara Utama)
         df_utama = df[df[row_col].isin(config["utama"])].copy()
         if not df_utama.empty:
             df_utama[row_col] = pd.Categorical(df_utama[row_col], categories=config["utama"], ordered=True)
             df_utama = df_utama.sort_values(row_col)
             potongan.append(df_utama)
             
-            # Jika ada kelompok lainnya, wajibkan Subtotal untuk kelompok utama
             if len(config["lainnya"]) > 0:
                 sub_utama = pd.DataFrame(df_utama[raw_cols].sum()).T
                 sub_utama[row_col] = config["label_subtotal"]
                 potongan.append(sub_utama)
             
-        # 2. Kelompok Lainnya & Baris Pemisah (Separator)
         if len(config["lainnya"]) > 0:
             separator = pd.DataFrame([{row_col: config["teks_separator"]}])
             for c in df.columns: 
@@ -153,9 +145,8 @@ def build_brs_display_table(report_flat, prov, moda):
                 df_lain = df_lain.sort_values(row_col)
                 potongan.append(df_lain)
                 
-                # Baris Subtotal/Jumlah untuk Kelompok Lainnya
                 sub_lain = pd.DataFrame(df_lain[raw_cols].sum()).T
-                sub_lain[row_col] = config["label_subtotal"] + " "  # Spasi pembeda agar tidak bentrok key index
+                sub_lain[row_col] = config["label_subtotal"] + " " 
                 potongan.append(sub_lain)
                 
         if not potongan and not df.empty:
@@ -163,7 +154,6 @@ def build_brs_display_table(report_flat, prov, moda):
     else:
         potongan.append(df)
         
-    # 3. Baris Grand Total Keseluruhan
     if not total_row.empty:
         t_label = HIERARKI_BRS.get(prov, {}).get(moda, {}).get("label_total", "TOTAL")
         total_row = total_row.reset_index()
@@ -179,7 +169,6 @@ def build_brs_display_table(report_flat, prov, moda):
     col_prev, col_curr = raw_cols[0], raw_cols[1]
     col_cum_prev, col_cum_curr = raw_cols[2], raw_cols[3]
     
-    # Hitung ulang persentase M-to-M dan Y-on-Y secara aman dari division by zero
     prev_vals_res = res[col_prev].values
     curr_vals_res = res[col_curr].values
     with np.errstate(divide='ignore', invalid='ignore'):
@@ -193,7 +182,7 @@ def build_brs_display_table(report_flat, prov, moda):
     res['Y-on-Y (%)'] = pd.Series(yoy_res, index=res.index).replace([np.inf, -np.inf], np.nan)
     
     return res[[col_prev, col_curr, 'M-to-M (%)', col_cum_prev, col_cum_curr, 'Y-on-Y (%)']]
-
+  
 def get_comparison_data(prov, thn, bln, moda):
     table = "transportasi_udara" if moda == "Transportasi Udara" else "transportasi_laut"
     bln_num = MONTH_MAP[bln]
