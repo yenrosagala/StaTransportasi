@@ -323,7 +323,7 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
         except Exception:
             continue
             
-    return None, "Failed"
+        return None, "Failed"
     
     def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln, prev_thn, model_name="gemini-2.5-flash"):
     cache_key = get_cache_key(prov, moda, label, bln, thn)
