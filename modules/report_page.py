@@ -272,7 +272,7 @@ def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln
 def create_complete_master_word_report(prov, thn, bln, all_report_data):
     doc = docx.Document()
     doc.add_heading(f"Laporan Komprehensif Perkembangan Transportasi Provinsi {prov} - {bln} {thn}", level=1)
-    doc.add_paragraph(f"Dokumen ini memuat seluruh tabel dan narasi strategis moda Transportasi Udara dan Transportasi Laut.")
+    doc.add_paragraph(f"Dokumen ini memuat seluruh tabel hierarki BRS dan narasi strategis moda Transportasi Udara dan Transportasi Laut.")
     doc.add_paragraph()
 
     for item in all_report_data:
@@ -281,30 +281,57 @@ def create_complete_master_word_report(prov, thn, bln, all_report_data):
         label = item['label']
         p1 = item['p1']
         p2 = item['p2']
-        df_display = item['df_display']
+        df_display = item['df_display'] # DataFrame dengan MultiIndex Columns (2 Level)
 
         doc.add_heading(f"Moda: {moda_name} - Tabel {table_no}: {label}", level=2)
         if p1: doc.add_paragraph(p1)
         
-        # Tambahkan Tabel ke Dokumen Word
+        # --- MEMBUAT TABEL DENGAN 2 LEVEL HEADER (MERGE CELL) ---
         df_to_export = df_display.reset_index()
-        rows = len(df_to_export) + 1
-        cols = len(df_to_export.columns)
-        table = doc.add_table(rows=rows, cols=cols)
+        row_col_name = df_to_export.columns[0] # Nama kolom pertama (misal: 'Bandara' atau 'nama_kabkota')
+        
+        # Jumlah baris: 2 baris header + data frame + 1 baris tambahan jika perlu
+        total_rows = len(df_to_export) + 2
+        total_cols = len(df_to_export.columns)
+        
+        table = doc.add_table(rows=total_rows, cols=total_cols)
         table.style = 'Table Grid'
-
-        hdr_cells = table.rows[0].cells
-        for j, col in enumerate(df_to_export.columns):
-            if isinstance(col, tuple):
-                hdr_cells[j].text = " - ".join([str(c) for c in col if str(c).strip()])
+        
+        # Baris Header 0 dan Baris Header 1
+        hdr_row_0 = table.rows[0]
+        hdr_row_1 = table.rows[1]
+        
+        # Mengisi Header Level 0 dan Level 1 berdasarkan MultiIndex Pandas
+        for j, col_tuple in enumerate(df_to_export.columns):
+            if isinstance(col_tuple, tuple):
+                lvl_0, lvl_1 = str(col_tuple[0]), str(col_tuple[1])
             else:
-                hdr_cells[j].text = str(col)
+                lvl_0, lvl_1 = str(col_tuple), ""
+                
+            hdr_row_0.cells[j].text = lvl_0
+            hdr_row_1.cells[j].text = lvl_1
 
+        # Melakukan Merge Cell secara vertikal untuk kolom pertama (Nama Wilayah/Bandara)
+        # dan horizontal untuk header kategori di atasnya
+        try:
+            # Merge kolom pertama secara vertikal (Baris 0 dan Baris 1 digabung)
+            hdr_row_0.cells[0].merge(hdr_row_1.cells[0])
+            
+            # Merge horizontal untuk header kelompok indikator utama (Kolom 1, 2, 3)
+            if total_cols >= 4:
+                hdr_row_0.cells[1].merge(hdr_row_0.cells[3])
+                # Merge horizontal untuk kelompok kumulatif (Kolom 4, 5, 6)
+                if total_cols >= 7:
+                    hdr_row_0.cells[4].merge(hdr_row_0.cells[6])
+        except Exception:
+            pass # Pengaman jika struktur kolom berbeda tipis
+
+        # Mengisi Data Baris ke dalam Tabel Word (Mulai dari baris index 2)
         for i, row_data in enumerate(df_to_export.values):
-            row_cells = table.rows[i + 1].cells
+            row_cells = table.rows[i + 2].cells
             for j, val in enumerate(row_data):
                 row_cells[j].text = "" if pd.isna(val) else str(val)
-
+                
         doc.add_paragraph()
         if p2: doc.add_paragraph(p2)
         doc.add_paragraph("---")
