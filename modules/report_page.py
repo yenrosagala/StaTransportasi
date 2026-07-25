@@ -363,14 +363,17 @@ def create_complete_master_word_report(prov, thn, bln, all_report_data):
     doc.add_paragraph()
 
     for item in all_report_data:
-        moda_name = item['moda']
         table_no = item['table_no']
         label = item['label']
+        moda_name = item['moda']
         p1 = item.get('p1', '')
         p2 = item.get('p2', '')
         df_display = item['df_display']
 
-        doc.add_heading(f"Moda: {moda_name} - Tabel {table_no}: {label}", level=2)
+        angkutan = "Angkutan Udara" if moda_name == "Transportasi Udara" else "Angkutan Laut"
+        full_title = f"Tabel {table_no} Perkembangan {label} {angkutan} Dalam Negeri Provinsi {prov}, {bln} {thn}"
+
+        doc.add_heading(full_title, level=2)
         if p1:
             clean_p1 = re.sub(r'^\*\(.*?\)\*\n\n', '', p1)
             doc.add_paragraph(clean_p1)
@@ -538,13 +541,13 @@ def render_tables_and_narratives(all_collected_data):
             icon = "✈️" if current_moda == "Transportasi Udara" else "🚢"
             st.subheader(f"{icon} Moda: {current_moda}")
 
-        # 1. Render Tabel Terlebih Dahulu
+        # 1. Render Tabel dengan Judul Lengkap Berurutan 1 hingga 8
         angkutan = "Angkutan Udara" if current_moda == "Transportasi Udara" else "Angkutan Laut"
         judul = f"Tabel {item['table_no']} Perkembangan {item['label']} {angkutan} Dalam Negeri Provinsi {item['prov']}, {item['bln']} {item['thn']}"
         st.markdown(f"**{judul}**")
         st.dataframe(item['styled_df'], use_container_width=True)
 
-        # 2. Generate dan Sisipkan Narasi Tepat di Bawah Tabel Bersesuaian (Tanpa limit token output)
+        # 2. Generate dan Sisipkan Narasi Tepat di Bawah Tabel Bersesuaian
         region_label = "Bandara" if current_moda == "Transportasi Udara" else "Pelabuhan/Kabupaten"
         with st.spinner(f"Menyusun Executive Summary untuk {item['label']}..."):
             text_final, source = generate_single_narrative_ai(
@@ -599,7 +602,9 @@ def show_report_page():
 
     if st.button("Generate Semua Laporan (Udara & Laut)"):
         all_collected_data = []
+        global_table_counter = 1  # Penghitung global agar penomoran tabel berurutan dari 1 sampai 8
         
+        # 1. Moda Transportasi Udara (Tabel 1 s.d. 4)
         moda_udara = "Transportasi Udara"
         df_cu, df_pr, df_cc, df_cp, p_bln, p_thn = get_comparison_data(prov, thn, bln, moda_udara)
         if not df_cu.empty:
@@ -607,10 +612,12 @@ def show_report_page():
                 ('penumpang_datang', 'Penumpang Datang'), ('penumpang_berangkat', 'Penumpang Berangkat'),
                 ('barang_bongkar_kg', 'Barang Bongkar (Kg)'), ('barang_muat_kg', 'Barang Muat (Kg)')
             ]
-            for i, (col, label) in enumerate(targets_udara, start=1):
-                item = prepare_table_item(df_cu, df_pr, df_cc, df_cp, col, label, 'nama_bandara', thn, bln, p_bln, p_thn, table_no=i, prov=prov, moda=moda_udara)
+            for col, label in targets_udara:
+                item = prepare_table_item(df_cu, df_pr, df_cc, df_cp, col, label, 'nama_bandara', thn, bln, p_bln, p_thn, table_no=global_table_counter, prov=prov, moda=moda_udara)
                 all_collected_data.append(item)
+                global_table_counter += 1
 
+        # 2. Moda Transportasi Laut (Tabel 5 s.d. 8)
         moda_laut = "Transportasi Laut"
         df_cu_l, df_pr_l, df_cc_l, df_cp_l, p_bln_l, p_thn_l = get_comparison_data(prov, thn, bln, moda_laut)
         if not df_cu_l.empty:
@@ -619,9 +626,10 @@ def show_report_page():
                 ('dn_penumpang_turun', 'Penumpang Turun'), ('dn_penumpang_naik', 'Penumpang Naik'),
                 ('dn_bongkar_barang_ton', 'Barang Bongkar (Ton)'), ('dn_muat_barang_ton', 'Barang Muat (Ton)')
             ]
-            for i, (col, label) in enumerate(targets_laut, start=1):
-                item = prepare_table_item(df_cu_l, df_pr_l, df_cc_l, df_cp_l, col, label, row_col_laut, thn, bln, p_bln_l, p_thn_l, table_no=i, prov=prov, moda=moda_laut)
+            for col, label in targets_laut:
+                item = prepare_table_item(df_cu_l, df_pr_l, df_cc_l, df_cp_l, col, label, row_col_laut, thn, bln, p_bln_l, p_thn_l, table_no=global_table_counter, prov=prov, moda=moda_laut)
                 all_collected_data.append(item)
+                global_table_counter += 1
 
         if all_collected_data:
             render_tables_and_narratives(all_collected_data)
