@@ -95,9 +95,11 @@ def normalisasi_entitas(nama):
 def build_brs_display_table(report_flat, prov, moda):
     """
     Menyusun ulang dataframe menjadi bentuk hierarki BRS (ada Subtotal & Total)
+    Dilengkapi pengaman agar baris data tidak kosong jika nama kolom/entitas bervariasi.
     """
     df = report_flat.copy()
     
+    # Pisahkan Grand Total asli
     if 'TOTAL' in df.index:
         total_row = df.loc[['TOTAL']]
         df = df.drop(index='TOTAL')
@@ -105,54 +107,65 @@ def build_brs_display_table(report_flat, prov, moda):
         total_row = pd.DataFrame()
         
     df = df.reset_index()
-    row_col = df.columns[0]
+     = df.columns[0]
     
     # Terapkan Normalisasi Nama
-    df[row_col] = df[row_col].apply(normalisasi_entitas)
-    df = df.groupby(row_col).sum(min_count=1).reset_index() 
+    df[] = df[].apply(normalisasi_entitas)
+    df = df.groupby().sum(min_count=1).reset_index() 
     
-    raw_cols = [c for c in df.columns if '(%)' not in c and c != row_col]
+    raw_cols = [c for c in df.columns if '(%)' not in c and c != ]
     potongan = []
     
+    # Periksa apakah konfigurasi provinsi & moda tersedia di HIERARKI_BRS
     if prov in HIERARKI_BRS and moda in HIERARKI_BRS[prov]:
         config = HIERARKI_BRS[prov][moda]
         
         # Kelompok Utama
-        df_utama = df[df[row_col].isin(config["utama"])].copy()
+        df_utama = df[df[].isin(config["utama"])].copy()
         if not df_utama.empty:
-            df_utama[row_col] = pd.Categorical(df_utama[row_col], categories=config["utama"], ordered=True)
-            df_utama = df_utama.sort_values(row_col)
+            df_utama[] = pd.Categorical(df_utama[], categories=config["utama"], ordered=True)
+            df_utama = df_utama.sort_values()
             potongan.append(df_utama)
             
         # Kelompok Lainnya
         if len(config["lainnya"]) > 0 and not df_utama.empty:
             sub_utama = pd.DataFrame(df_utama[raw_cols].sum()).T
-            sub_utama[row_col] = config["label_subtotal"]
+            sub_utama[] = config["label_subtotal"]
             
-            separator = pd.DataFrame([{row_col: config["teks_separator"]}])
+            separator = pd.DataFrame([{: config["teks_separator"]}])
             for c in df.columns: 
-                if c != row_col: separator[c] = np.nan
+                if c != : separator[c] = np.nan
             
-            df_lain = df[df[row_col].isin(config["lainnya"])].copy()
+            df_lain = df[df[].isin(config["lainnya"])].copy()
             if not df_lain.empty:
-                df_lain[row_col] = pd.Categorical(df_lain[row_col], categories=config["lainnya"], ordered=True)
-                df_lain = df_lain.sort_values(row_col)
+                df_lain[] = pd.Categorical(df_lain[], categories=config["lainnya"], ordered=True)
+                df_lain = df_lain.sort_values()
                 
                 sub_lain = pd.DataFrame(df_lain[raw_cols].sum()).T
-                sub_lain[row_col] = config["label_subtotal"] + " " 
+                sub_lain[] = config["label_subtotal"] + " " 
                 
                 potongan.extend([sub_utama, separator, df_lain, sub_lain])
+        
+        # PENGAMAN: Jika karena suatu hal kelompok utama & lainnya kosong tapi data aslinya ada, 
+        # tampilkan seluruh data mentahnya agar tabel tidak blank.
+        if not potongan and not df.empty:
+            potongan.append(df)
     else:
+        # Jika konfigurasi tidak ditemukan, tampilkan seluruh baris data apa adanya
         potongan.append(df)
         
+    # Gabungkan kembali Grand Total
     if not total_row.empty:
         t_label = HIERARKI_BRS.get(prov, {}).get(moda, {}).get("label_total", "TOTAL")
         total_row = total_row.reset_index()
-        total_row.rename(columns={'index': row_col}, inplace=True)
-        total_row[row_col] = t_label
+        total_row.rename(columns={'index': }, inplace=True)
+        total_row[] = t_label
         potongan.append(total_row)
         
-    res = pd.concat(potongan, ignore_index=True).set_index(row_col)
+    if potongan:
+        res = pd.concat(potongan, ignore_index=True).set_index()
+    else:
+        res = df.set_index()
     
     col_prev, col_curr = raw_cols[0], raw_cols[1]
     col_cum_prev, col_cum_curr = raw_cols[2], raw_cols[3]
@@ -170,7 +183,6 @@ def build_brs_display_table(report_flat, prov, moda):
     res['Y-on-Y (%)'] = pd.Series(yoy_res, index=res.index).replace([np.inf, -np.inf], np.nan)
     
     return res[[col_prev, col_curr, 'M-to-M (%)', col_cum_prev, col_cum_curr, 'Y-on-Y (%)']]
-
 def get_comparison_data(prov, thn, bln, moda):
     table = "transportasi_udara" if moda == "Transportasi Udara" else "transportasi_laut"
     bln_num = MONTH_MAP[bln]
@@ -356,11 +368,11 @@ def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln
 
     return para1, para2
 
-def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, label, row_col, thn, bln, prev_bln, prev_thn, table_no=None, prov=None, moda=None):
-    curr_grp = df_curr.groupby(row_col)[col_target].sum()
-    prev_grp = df_prev.groupby(row_col)[col_target].sum()
-    cum_curr_grp = df_cum_curr.groupby(row_col)[col_target].sum()
-    cum_prev_grp = df_cum_prev.groupby(row_col)[col_target].sum()
+def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, label, , thn, bln, prev_bln, prev_thn, table_no=None, prov=None, moda=None):
+    curr_grp = df_curr.groupby()[col_target].sum()
+    prev_grp = df_prev.groupby()[col_target].sum()
+    cum_curr_grp = df_cum_curr.groupby()[col_target].sum()
+    cum_prev_grp = df_cum_prev.groupby()[col_target].sum()
 
     report = pd.DataFrame(index=curr_grp.index)
     col_curr, col_prev = f"{bln} {thn}", f"{prev_bln} {prev_thn}"
@@ -480,7 +492,7 @@ def show_report_page():
             st.warning("Tidak ada data untuk periode terpilih.")
             return
 
-        row_col = 'nama_bandara' if moda == 'Transportasi Udara' else 'nama_kabkota'
+         = 'nama_bandara' if moda == 'Transportasi Udara' else 'nama_kabkota'
         targets = [
             ('penumpang_datang', 'Penumpang Datang'), ('penumpang_berangkat', 'Penumpang Berangkat'),
             ('barang_bongkar_kg', 'Barang Bongkar (Kg)'), ('barang_muat_kg', 'Barang Muat (Kg)')
@@ -490,4 +502,4 @@ def show_report_page():
         ]
         
         for i, (col, label) in enumerate(targets, start=1):
-            format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col, label, row_col, thn, bln, prev_bln, prev_thn, table_no=i, prov=prov, moda=moda)
+            format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col, label, , thn, bln, prev_bln, prev_thn, table_no=i, prov=prov, moda=moda)
