@@ -80,22 +80,20 @@ HIERARKI_BRS = {
 
 def normalisasi_entitas(nama):
     """
-    Membersihkan kata 'Bandara ' atau 'Pelabuhan ' dari database 
-    agar cocok dengan konfigurasi hierarki BRS.
+    Menyeragamkan nama entitas agar memiliki awalan 'Bandara ' 
+    sehingga cocok dengan kamus HIERARKI_BRS.
     """
     if not isinstance(nama, str):
         return str(nama)
     
     clean_name = nama.strip()
     
-    # Hapus awalan case-insensitive 'bandara ' atau 'pelabuhan ' jika ada
-    if clean_name.lower().startswith("bandara "):
-        clean_name = clean_name[8:].strip()
-    elif clean_name.lower().startswith("pelabuhan "):
-        clean_name = clean_name[10:].strip()
+    # Jika di database belum ada kata 'Bandara ', tambahkan secara otomatis
+    if not clean_name.lower().startswith("bandara "):
+        clean_name = f"Bandara {clean_name}"
         
     mapping_khusus = {
-        "Nabire": "Douw Aturure"
+        "Bandara Nabire": "Douw Aturure"
     }
     
     return mapping_khusus.get(clean_name, clean_name)
