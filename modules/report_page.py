@@ -89,8 +89,7 @@ def normalisasi_entitas(nama,moda):
     clean_name = nama.strip()
     
     if moda == "Transportasi Udara":
-        if not clean_name.lower().startswith("bandara "):
-            clean_name = f"Bandara {clean_name}"
+       
         mapping_khusus = {
             "Bandara Nabire": "Douw Aturure"
         }
