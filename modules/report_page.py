@@ -230,24 +230,88 @@ def _arah_dinamis(pct):
     return "stabil"
 
 def generate_narrative_ai(df_flat, col_target, moda, prov, bln, thn, prev_bln, prev_thn):
-    api_keys = st.secrets.get("API-GEMINI-KEYS") or st.secrets.get("API_GEMINI_KEYS")
-    if not api_keys: return None
+    # Mengambil daftar kunci API dari secrets (mendukung berbagai penamaan key)
+    api_keys = st.secrets.get("API-GEMINI-KEYS") or st.secrets.get("API_GEMINI_KEYS") or st.secrets.get("API_GEMINI_KEY")
+    
+    # Jika tidak ada kunci sama sekali, langsung kembalikan None agar beralih ke fallback
+    if not api_keys:
+        return None
+
+    # Jika api_keys berupa string tunggal, ubah ke dalam bentuk list agar bisa di-loop
+    if isinstance(api_keys, str):
+        api_keys = [api_keys]
 
     data_str = df_flat.to_markdown()
+    
     prompt = f"""
     Bertindaklah sebagai analis data senior di Badan Pusat Statistik (BPS) yang profesional namun komunikatif. 
-    Buatlah tepat 2 paragraf ringkasan naratif dari data tabel statistik di bawah ini. Pisahkan paragraf pertama dan kedua dengan baris kosong ganda (\\n\\n).
-    Konteks Data: Provinsi {prov}, Moda {moda}, Indikator {col_target}, Periode {bln} {thn} vs {prev_bln} {prev_thn}.
-    Tabel Data:\n{data_str}
-    Aturan: Langsung berikan output 2 paragraf teks saja tanpa pengantar/penutup. Format angka sesuai kaidah Indonesia.
+    Buatlah tepat 2 paragraf ringkasan naratif dari data tabel statistik di bawah ini. Pisahkan paragraf pertama dan kedua dengan baris kosong ganda (\\n\\n). Adaptasi gaya bahasa Berita Resmi Statistik (BRS), namun buatlah kalimatnya lebih mengalir, natural, dan tidak kaku. 
+    
+    Variasikan pilihan kata (jangan monoton menggunakan frasa "tercatat sebanyak"). Anda bisa menggunakan kata ganti seperti "mencapai", "berada di angka", "menyentuh", "mengalami lonjakan", atau "terkoreksi".
+    Nilai "Undefined" artinya tidak bisa dihitung karena pembaginya nol. Jika ada Undefined, sesuaikan narasinya dengan logis atau lewati sebutan persentasenya.
+
+    Struktur Narasi yang Wajib Diikuti:
+    1. Paragraf Pertama (Bulan ke Bulan / M-to-M):
+       - Bandingkan total indikator pada {bln} {thn} dengan {prev_bln} {prev_thn}.
+       - Jika merinci ke tingkat wilayah (pelabuhan/bandara), cukup soroti wilayah dengan peningkatan tertinggi dan/atau penurunan terdalam agar efisien.
+    
+    2. Paragraf Kedua (Kumulatif Tahun ke Tahun / Y-on-Y):
+       - Bandingkan total kumulatif dari Januari hingga {bln} {thn} dengan periode yang sama di tahun sebelumnya.
+       - Berikan rincian singkat wilayah mana yang memiliki lonjakan kumulatif tertinggi atau penurunan terdalam.
+
+    Konteks Data:
+    - Provinsi: {prov}
+    - Moda Transportasi: {moda}
+    - Indikator: {col_target}
+    
+    Tabel Data:
+    {data_str}
+    
+    Aturan Tambahan:
+    - Langsung berikan output teks saja yang berisi 2 paragraf, tanpa kalimat pengantar/penutup.
+    - Format angka sesuai kaidah Bahasa Indonesia (titik untuk ribuan, koma untuk desimal).
     """
+
+    # Melakukan perulangan mencoba setiap API Key yang tersedia secara berurutan
     for key in api_keys:
+        if not key.strip():
+            continue
         try:
-            client = genai.Client(api_key=key)
-            response = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
-            if response.text: return response.text
-        except Exception: continue
+            client = genai.Client(api_key=key.strip())
+            response = client.models.generate_content(
+                model='gemini-1.5-flash',
+                contents=prompt,
+                config=genai.types.GenerateContentConfig(temperature=0.1)
+            )
+            # Jika berhasil mendapatkan teks dari AI, langsung kembalikan hasilnya
+            if response and response.text:
+                return response.text
+        except Exception as e:
+            # Jika kunci ini gagal/error (misal kuota habis atau salah key), catat dan lanjut ke key berikutnya
+            continue
+            
+    # Jika seluruh kunci di dalam list terbukti gagal, kembalikan None
     return None
+
+with st.spinner(f"Menyusun narasi untuk indikator {label} menggunakan AI..."):
+        narasi_ai = generate_narrative_ai(report_display_brs, label, moda, prov, bln, thn, prev_bln, prev_thn)
+        
+    if narasi_ai is None:
+        # Hanya dijalankan jika seluruh API key gagal atau tidak ditemukan
+        p1, p2 = generate_narrative_fallback(
+            report_flat, col_target, moda, region_label, bln, thn, prev_bln, prev_thn,
+            col_prev, col_curr, col_cum_prev, col_cum_curr
+        )
+        para1_text = f"*(Semua API AI Gagal - Narasi Dihasilkan oleh Sistem Fallback)*\n\n{p1}"
+        para2_text = p2
+    else:
+        parts = [p.strip() for p in narasi_ai.split('\n\n') if p.strip()]
+        if len(parts) >= 2:
+            para1_text = f"*(Narasi Berhasil Dihasilkan oleh Gemini AI)*\n\n{parts[0]}"
+            para2_text = "\n\n".join(parts[1:])
+        elif len(parts) == 1:
+            para1_text = f"*(Narasi Berhasil Dihasilkan oleh Gemini AI)*\n\n{parts[0]}"
+            para2_text = ""
 
 def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln, thn, prev_bln, prev_thn,
                                 col_prev, col_curr, col_cum_prev, col_cum_curr):
