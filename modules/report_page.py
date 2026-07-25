@@ -294,24 +294,24 @@ def generate_narrative_ai(df_flat, col_target, moda, prov, bln, thn, prev_bln, p
     return None
 
 with st.spinner(f"Menyusun narasi untuk indikator {label} menggunakan AI..."):
-        narasi_ai = generate_narrative_ai(report_display_brs, label, moda, prov, bln, thn, prev_bln, prev_thn)
-        
-    if narasi_ai is None:
-        # Hanya dijalankan jika seluruh API key gagal atau tidak ditemukan
-        p1, p2 = generate_narrative_fallback(
-            report_flat, col_target, moda, region_label, bln, thn, prev_bln, prev_thn,
-            col_prev, col_curr, col_cum_prev, col_cum_curr
-        )
-        para1_text = f"*(Semua API AI Gagal - Narasi Dihasilkan oleh Sistem Fallback)*\n\n{p1}"
-        para2_text = p2
-    else:
-        parts = [p.strip() for p in narasi_ai.split('\n\n') if p.strip()]
-        if len(parts) >= 2:
-            para1_text = f"*(Narasi Berhasil Dihasilkan oleh Gemini AI)*\n\n{parts[0]}"
-            para2_text = "\n\n".join(parts[1:])
-        elif len(parts) == 1:
-            para1_text = f"*(Narasi Berhasil Dihasilkan oleh Gemini AI)*\n\n{parts[0]}"
-            para2_text = ""
+    narasi_ai = generate_narrative_ai(report_display_brs, label, moda, prov, bln, thn, prev_bln, prev_thn)
+    
+  if narasi_ai is None:
+      # Hanya dijalankan jika seluruh API key gagal atau tidak ditemukan
+      p1, p2 = generate_narrative_fallback(
+          report_flat, col_target, moda, region_label, bln, thn, prev_bln, prev_thn,
+          col_prev, col_curr, col_cum_prev, col_cum_curr
+      )
+      para1_text = f"*(Semua API AI Gagal - Narasi Dihasilkan oleh Sistem Fallback)*\n\n{p1}"
+      para2_text = p2
+  else:
+      parts = [p.strip() for p in narasi_ai.split('\n\n') if p.strip()]
+      if len(parts) >= 2:
+          para1_text = f"*(Narasi Berhasil Dihasilkan oleh Gemini AI)*\n\n{parts[0]}"
+          para2_text = "\n\n".join(parts[1:])
+      elif len(parts) == 1:
+          para1_text = f"*(Narasi Berhasil Dihasilkan oleh Gemini AI)*\n\n{parts[0]}"
+          para2_text = ""
 
 def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln, thn, prev_bln, prev_thn,
                                 col_prev, col_curr, col_cum_prev, col_cum_curr):
