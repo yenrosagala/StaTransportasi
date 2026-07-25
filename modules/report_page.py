@@ -302,7 +302,7 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
         "- Paragraf pertama fokus pada kinerja bulanan/MTM, arah tren, dan total agregat wilayah utama.\n"
         "- Paragraf kedua fokus pada performa kumulatif YTD/YOY, proyeksi pertumbuhan, dan deviasi signifikan antar wilayah.\n"
         "- Gunakan bahasa formal, tajam, analitis, format angka Indonesia.\n"
-       
+        "- Jangan berikan pengantar atau penutup, langsung berikan 2 paragraf teks yang dipisahkan oleh satu baris kosong (\\n\\n).\n\n"
         "Data Tabel:\n"
         f"{data_str}"
     )
@@ -313,7 +313,7 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
             response = client.models.generate_content(
                 model=model_name,
                 contents=prompt,
-                config=genai.types.GenerateContentConfig(temperature=0.2)
+                config=genai.types.GenerateContentConfig(temperature=0.2, max_output_tokens=1024)
             )
             raw_text = getattr(response, "text", None)
             if raw_text and str(raw_text).strip():
@@ -323,9 +323,8 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
         except Exception:
             continue
             
-        return None, "Failed"
-    
-   
+    return None, "Failed"
+
 def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln, thn, prev_bln, prev_thn,
                                 col_prev, col_curr, col_cum_prev, col_cum_curr, prov=""):
     meta = NARRATIVE_META.get(col_target, {'subject': 'Total volume', 'satuan': '', 'is_penumpang': False})
@@ -441,7 +440,7 @@ def create_complete_master_word_report(prov, thn, bln, all_report_data):
     file_stream.seek(0)
     return file_stream
 
-def format_and_render_single_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, label, row_col, thn, bln, prev_bln, prev_thn, table_no=None, prov=None, moda=None):
+def prepare_table_item(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, label, row_col, thn, bln, prev_bln, prev_thn, table_no=None, prov=None, moda=None):
     curr_grp = df_curr.groupby(row_col)[col_target].sum()
     prev_grp = df_prev.groupby(row_col)[col_target].sum()
     cum_curr_grp = df_cum_curr.groupby(row_col)[col_target].sum()
@@ -461,7 +460,7 @@ def format_and_render_single_table(df_curr, df_prev, df_cum_curr, df_cum_prev, c
     report['M-to-M (%)'] = pd.Series(mtm_pct, index=report.index).replace([np.inf, -np.inf], np.nan)
 
     report[col_cum_prev] = cum_prev_grp.reindex(report.index).fillna(0)
-    report[col_cum_curr] = cum_cum_curr_grp = df_cum_curr.groupby(row_col)[col_target].sum().reindex(report.index).fillna(0)
+    report[col_cum_curr] = df_cum_curr.groupby(row_col)[col_target].sum().reindex(report.index).fillna(0)
     
     cum_prev_vals = report[col_cum_prev].values
     cum_curr_vals = report[col_cum_curr].values
@@ -508,52 +507,88 @@ def format_and_render_single_table(df_curr, df_prev, df_cum_curr, df_cum_prev, c
 
     styled_df = style_brs_hierarchy(report_display.style)
 
-    # Render Judul dan Tabel di Streamlit
-    angkutan = "Angkutan Udara" if moda == "Transportasi Udara" else "Angkutan Laut"
-    judul = f"Tabel {table_no} Perkembangan {label} {angkutan} Dalam Negeri Provinsi {prov}, {bln} {thn}"
-    st.markdown(f"**{judul}**")
-    st.dataframe(styled_df, width='stretch')
-
-    # Generate Narasi Satu-Satu secara Berurutan hingga Selesai
-    region_label = "Bandara" if moda == "Transportasi Udara" else "Pelabuhan/Kabupaten"
-    with st.spinner(f"Menyusun Executive Summary untuk {label}..."):
-        text_final, source = generate_single_narrative_ai(report_display_brs.reset_index(), label, prov, moda, bln, thn, prev_bln, prev_thn)
-
-    if text_final:
-        p1, p2 = parse_two_paragraphs(text_final)
-        p1_text = f"*(Executive Summary - Gemini AI)*\n\n{p1}" if p1 else ""
-        p2_text = p2 if p2 else ""
-    else:
-        p1, p2 = generate_narrative_fallback(
-            report_flat=report_flat,
-            col_target=col_target,
-            moda=moda,
-            region_label=region_label,
-            bln=bln,
-            thn=thn,
-            prev_bln=prev_bln,
-            prev_thn=prev_thn,
-            col_prev=col_prev,
-            col_curr=col_curr,
-            col_cum_prev=col_cum_prev,
-            col_cum_curr=col_cum_curr,
-            prov=prov
-        )
-        p1_text = f"*(Executive Summary - Sistem Fallback)*\n\n{p1}"
-        p2_text = p2
-
-    if p1_text: st.markdown(p1_text)
-    if p2_text: st.markdown(p2_text)
-    st.markdown("---")
-
     return {
         'moda': moda,
         'table_no': table_no,
         'label': label,
-        'p1': p1_text,
-        'p2': p2_text,
-        'df_display': report_display
+        'col_target': col_target,
+        'prov': prov,
+        'bln': bln,
+        'thn': thn,
+        'prev_bln': prev_bln,
+        'prev_thn': prev_thn,
+        'col_prev': col_prev,
+        'col_curr': col_curr,
+        'col_cum_prev': col_cum_prev,
+        'col_cum_curr': col_cum_curr,
+        'report_flat': report_flat,
+        'report_display_brs': report_display_brs,
+        'df_display': report_display,
+        'styled_df': styled_df,
     }
+
+def render_tables_and_narratives(all_collected_data):
+    if not all_collected_data:
+        return
+
+    current_moda = None
+    for item in all_collected_data:
+        if current_moda != item['moda']:
+            current_moda = item['moda']
+            icon = "✈️" if current_moda == "Transportasi Udara" else "🚢"
+            st.subheader(f"{icon} Moda: {current_moda}")
+
+        # 1. Render Tabel Terlebih Dahulu
+        angkutan = "Angkutan Udara" if current_moda == "Transportasi Udara" else "Angkutan Laut"
+        judul = f"Tabel {item['table_no']} Perkembangan {item['label']} {angkutan} Dalam Negeri Provinsi {item['prov']}, {item['bln']} {item['thn']}"
+        st.markdown(f"**{judul}**")
+        st.dataframe(item['styled_df'], use_container_width=True)
+
+        # 2. Generate dan Sisipkan Narasi Tepat di Bawah Tabel Bersesuaian
+        region_label = "Bandara" if current_moda == "Transportasi Udara" else "Pelabuhan/Kabupaten"
+        with st.spinner(f"Menyusun Executive Summary untuk {item['label']}..."):
+            text_final, source = generate_single_narrative_ai(
+                item['report_display_brs'].reset_index(), 
+                item['label'], 
+                item['prov'], 
+                current_moda, 
+                item['bln'], 
+                item['thn'], 
+                item['prev_bln'], 
+                item['prev_thn']
+            )
+
+        if text_final:
+            p1, p2 = parse_two_paragraphs(text_final)
+            p1_text = f"*(Executive Summary - Gemini AI)*\n\n{p1}" if p1 else ""
+            p2_text = p2 if p2 else ""
+        else:
+            p1, p2 = generate_narrative_fallback(
+                report_flat=item['report_flat'],
+                col_target=item['col_target'],
+                moda=current_moda,
+                region_label=region_label,
+                bln=item['bln'],
+                thn=item['thn'],
+                prev_bln=item['prev_bln'],
+                prev_thn=item['prev_thn'],
+                col_prev=item['col_prev'],
+                col_curr=item['col_curr'],
+                col_cum_prev=item['col_cum_prev'],
+                col_cum_curr=item['col_cum_curr'],
+                prov=item['prov']
+            )
+            p1_text = f"*(Executive Summary - Sistem Fallback)*\n\n{p1}"
+            p2_text = p2
+
+        if p1_text: st.markdown(p1_text)
+        if p2_text: st.markdown(p2_text)
+        
+        # Simpan narasi ke item untuk export Word
+        item['p1'] = p1_text
+        item['p2'] = p2_text
+
+        st.markdown("---")
 
 def show_report_page():
     st.title("📋 Laporan Komparatif Strategis")
@@ -566,34 +601,35 @@ def show_report_page():
     if st.button("Generate Semua Laporan (Udara & Laut)"):
         all_collected_data = []
         
-        # 1. Moda Transportasi Udara
+        # 1. Kumpulkan Data Moda Transportasi Udara
         moda_udara = "Transportasi Udara"
         df_cu, df_pr, df_cc, df_cp, p_bln, p_thn = get_comparison_data(prov, thn, bln, moda_udara)
         if not df_cu.empty:
-            st.subheader("✈️ Moda: Transportasi Udara")
             targets_udara = [
                 ('penumpang_datang', 'Penumpang Datang'), ('penumpang_berangkat', 'Penumpang Berangkat'),
                 ('barang_bongkar_kg', 'Barang Bongkar (Kg)'), ('barang_muat_kg', 'Barang Muat (Kg)')
             ]
             for i, (col, label) in enumerate(targets_udara, start=1):
-                res_item = format_and_render_single_table(df_cu, df_pr, df_cc, df_cp, col, label, 'nama_bandara', thn, bln, p_bln, p_thn, table_no=i, prov=prov, moda=moda_udara)
-                all_collected_data.append(res_item)
+                item = prepare_table_item(df_cu, df_pr, df_cc, df_cp, col, label, 'nama_bandara', thn, bln, p_bln, p_thn, table_no=i, prov=prov, moda=moda_udara)
+                all_collected_data.append(item)
 
-        # 2. Moda Transportasi Laut
+        # 2. Kumpulkan Data Moda Transportasi Laut
         moda_laut = "Transportasi Laut"
         df_cu_l, df_pr_l, df_cc_l, df_cp_l, p_bln_l, p_thn_l = get_comparison_data(prov, thn, bln, moda_laut)
         if not df_cu_l.empty:
-            st.subheader("🚢 Moda: Transportasi Laut")
             row_col_laut = 'nama_kabkota' if prov == "Papua Tengah" else 'nama_pelabuhan'
             targets_laut = [
                 ('dn_penumpang_turun', 'Penumpang Turun'), ('dn_penumpang_naik', 'Penumpang Naik'),
                 ('dn_bongkar_barang_ton', 'Barang Bongkar (Ton)'), ('dn_muat_barang_ton', 'Barang Muat (Ton)')
             ]
             for i, (col, label) in enumerate(targets_laut, start=1):
-                res_item = format_and_render_single_table(df_cu_l, df_pr_l, df_cc_l, df_cp_l, col, label, row_col_laut, thn, bln, p_bln_l, p_thn_l, table_no=i, prov=prov, moda=moda_laut)
-                all_collected_data.append(res_item)
+                item = prepare_table_item(df_cu_l, df_pr_l, df_cc_l, df_cp_l, col, label, row_col_laut, thn, bln, p_bln_l, p_thn_l, table_no=i, prov=prov, moda=moda_laut)
+                all_collected_data.append(item)
 
+        # 3. Render Tabel Terlebih Dahulu, lalu Sisipkan Narasi di Bawahnya secara Berurutan
         if all_collected_data:
+            render_tables_and_narratives(all_collected_data)
+
             master_word_file = create_complete_master_word_report(prov, thn, bln, all_collected_data)
             st.success("Semua data laporan dan narasi berhasil digenerate sepenuhnya!")
             st.download_button(
