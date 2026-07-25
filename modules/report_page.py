@@ -7,7 +7,6 @@ import docx
 import re
 import time
 import logging
-from collections import defaultdict
 from google import genai
 from sqlalchemy import text
 from modules.database import get_engine
@@ -241,9 +240,6 @@ def ensure_narasi_cache():
     if "narasi_cache" not in st.session_state:
         st.session_state["narasi_cache"] = {}
 
-def normalize_label(label):
-    return re.sub(r"\s+", " ", str(label).strip().lower())
-
 def get_cache_key(prov, moda, col_target, bln, thn):
     return f"{prov}|{moda}|{col_target}|{bln}|{thn}"
 
@@ -278,19 +274,6 @@ def get_gemini_api_keys():
             unique_keys.append(k)
     return unique_keys
 
-def parse_narasi_sections(raw_text):
-    hasil = {}
-    if not raw_text: return hasil
-    teks = str(raw_text).strip()
-    pola = r"(?m)^===\s*(.+?)\s*===\s*$"
-    parts = re.split(pola, teks)
-    for i in range(1, len(parts), 2):
-        label = normalize_label(parts[i])
-        isi = parts[i + 1].strip() if i + 1 < len(parts) else ""
-        if label and isi:
-            hasil[label] = isi
-    return hasil
-
 def parse_two_paragraphs(text):
     if not text or not str(text).strip(): return None, None
     parts = [p.strip() for p in str(text).strip().split("\n\n") if p.strip()]
@@ -298,51 +281,31 @@ def parse_two_paragraphs(text):
     if len(parts) == 1: return parts[0], ""
     return None, None
 
-def generate_narrative_ai_batch(items, prov, moda, bln, thn, prev_bln, prev_thn, model_name="gemini-2.5-flash"):
+def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln, prev_thn, model_name="gemini-2.5-flash"):
+    cache_key = get_cache_key(prov, moda, label, bln, thn)
     ensure_narasi_cache()
     cache = st.session_state["narasi_cache"]
-    hasil = {}
-
-    pending = []
-    for item in items:
-        key = item["cache_key"]
-        if key in cache:
-            hasil[key] = {"text": cache[key], "source": "Cache"}
-        else:
-            pending.append(item)
-
-    if not pending: return hasil
+    
+    if cache_key in cache:
+        return cache[cache_key], "Cache"
 
     api_keys = get_gemini_api_keys()
-    if not api_keys: return hasil
+    if not api_keys:
+        return None, "No API Key"
 
-    data_sections = []
-    for item in pending:
-        data_sections.append(f"### {item['label']}\n{item['table_markdown']}")
-
-    prompt = f"""
-Bertindaklah sebagai Kepala Pusat Statistik yang menyusun Executive Summary eksekutif untuk Dewan Pimpinan dan Pengambil Kebijakan.
-Tugas: Buat ringkasan naratif tingkat tinggi (executive summary) untuk SETIAP indikator di bawah ini.
-
-Aturan output:
-- Keluarkan hanya bagian-bagian narasi tanpa pengantar atau penutup.
-- Untuk setiap indikator, gunakan format tepat seperti ini:
-=== NAMA INDIKATOR ===
-Paragraf pertama (fokus pada kinerja bulanan/MTM, arah tren, dan total agregat wilayah utama).
-
-Paragraf kedua (fokus pada performa kumulatif YTD/YOY, proyeksi pertumbuhan, dan deviasi signifikan antar wilayah).
-- Setiap indikator wajib terdiri dari tepat 2 paragraf padat bernilai strategis.
-- Gunakan bahasa formal, tajam, analitis, dan format angka Indonesia.
-
-Konteks umum:
-- Provinsi: {prov}
-- Moda: {moda}
-- Periode: {bln} {thn}
-- Pembanding: {prev_bln} {prev_thn}
-
-Data per indikator:
-{chr(10).join(data_sections)}
-""".strip()
+    data_str = df_flat.to_markdown(index=False)
+    
+    prompt = (
+        "Bertindaklah sebagai Kepala Pusat Statistik yang menyusun Executive Summary eksekutif untuk Dewan Pimpinan dan Pengambil Kebijakan.\n"
+        f"Buat ringkasan naratif tingkat tinggi (executive summary) tepat 2 paragraf untuk indikator \"{label}\" pada moda {moda} di Provinsi {prov} ({bln} {thn} dibanding {prev_bln} {prev_thn}).\n\n"
+        "Aturan:\n"
+        "- Paragraf pertama fokus pada kinerja bulanan/MTM, arah tren, dan total agregat wilayah utama.\n"
+        "- Paragraf kedua fokus pada performa kumulatif YTD/YOY, proyeksi pertumbuhan, dan deviasi signifikan antar wilayah.\n"
+        "- Gunakan bahasa formal, tajam, analitis, format angka Indonesia.\n"
+        "- Jangan berikan pengantar atau penutup, langsung berikan 2 paragraf teks yang dipisahkan oleh satu baris kosong (\\n\\n).\n\n"
+        "Data Tabel:\n"
+        f"{data_str}"
+    )
 
     for key in api_keys:
         try:
@@ -350,26 +313,35 @@ Data per indikator:
             response = client.models.generate_content(
                 model=model_name,
                 contents=prompt,
-                config=genai.types.GenerateContentConfig(temperature=0.2, max_output_tokens=2048)
+                config=genai.types.GenerateContentConfig(temperature=0.2, max_output_tokens=1024)
             )
             raw_text = getattr(response, "text", None)
-            if not raw_text: continue
-            parsed = parse_narasi_sections(raw_text)
-
-            for item in pending:
-                cache_key = item["cache_key"]
-                label_norm = normalize_label(item["label"])
-                section = parsed.get(label_norm)
-                if section:
-                    p1, p2 = parse_two_paragraphs(section)
-                    text_final = "\n\n".join([p for p in [p1, p2] if p]).strip()
-                    if text_final:
-                        hasil[cache_key] = {"text": text_final, "source": "Gemini AI"}
-                        cache[cache_key] = text_final
-            return hasil
+            if raw_text and str(raw_text).strip():
+                text_clean = str(raw_text).strip()
+                cache[cache_key] = text_clean
+                return text_clean, "Gemini AI"
         except Exception:
             continue
-    return hasil
+            
+    return None, "Failed"
+
+    for key in api_keys:
+        try:
+            client = genai.Client(api_key=key.strip())
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=genai.types.GenerateContentConfig(temperature=0.2, max_output_tokens=1024)
+            )
+            raw_text = getattr(response, "text", None)
+            if raw_text and str(raw_text).strip():
+                text_clean = str(raw_text).strip()
+                cache[cache_key] = text_clean
+                return text_clean, "Gemini AI"
+        except Exception:
+            continue
+            
+    return None, "Failed"
 
 def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln, thn, prev_bln, prev_thn,
                                 col_prev, col_curr, col_cum_prev, col_cum_curr, prov=""):
@@ -486,7 +458,7 @@ def create_complete_master_word_report(prov, thn, bln, all_report_data):
     file_stream.seek(0)
     return file_stream
 
-def format_report_table_data(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, label, row_col, thn, bln, prev_bln, prev_thn, table_no=None, prov=None, moda=None):
+def format_and_render_single_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, label, row_col, thn, bln, prev_bln, prev_thn, table_no=None, prov=None, moda=None):
     curr_grp = df_curr.groupby(row_col)[col_target].sum()
     prev_grp = df_prev.groupby(row_col)[col_target].sum()
     cum_curr_grp = df_cum_curr.groupby(row_col)[col_target].sum()
@@ -506,7 +478,7 @@ def format_report_table_data(df_curr, df_prev, df_cum_curr, df_cum_prev, col_tar
     report['M-to-M (%)'] = pd.Series(mtm_pct, index=report.index).replace([np.inf, -np.inf], np.nan)
 
     report[col_cum_prev] = cum_prev_grp.reindex(report.index).fillna(0)
-    report[col_cum_curr] = cum_curr_grp.reindex(report.index).fillna(0)
+    report[col_cum_curr] = cum_cum_curr_grp = df_cum_curr.groupby(row_col)[col_target].sum().reindex(report.index).fillna(0)
     
     cum_prev_vals = report[col_cum_prev].values
     cum_curr_vals = report[col_cum_curr].values
@@ -551,111 +523,54 @@ def format_report_table_data(df_curr, df_prev, df_cum_curr, df_cum_prev, col_tar
         styler = styler.apply(highlight_rows, axis=1)
         return styler
 
-    styled_report_display = style_brs_hierarchy(report_display.style)
+    styled_df = style_brs_hierarchy(report_display.style)
+
+    # Render Judul dan Tabel di Streamlit
+    angkutan = "Angkutan Udara" if moda == "Transportasi Udara" else "Angkutan Laut"
+    judul = f"Tabel {table_no} Perkembangan {label} {angkutan} Dalam Negeri Provinsi {prov}, {bln} {thn}"
+    st.markdown(f"**{judul}**")
+    st.dataframe(styled_df, use_container_width=True)
+
+    # Generate Narasi Satu-Satu secara Berurutan hingga Selesai
+    region_label = "Bandara" if moda == "Transportasi Udara" else "Pelabuhan/Kabupaten"
+    with st.spinner(f"Menyusun Executive Summary untuk {label}..."):
+        text_final, source = generate_single_narrative_ai(report_display_brs.reset_index(), label, prov, moda, bln, thn, prev_bln, prev_thn)
+
+    if text_final:
+        p1, p2 = parse_two_paragraphs(text_final)
+        p1_text = f"*(Executive Summary - Gemini AI)*\n\n{p1}" if p1 else ""
+        p2_text = p2 if p2 else ""
+    else:
+        p1, p2 = generate_narrative_fallback(
+            report_flat=report_flat,
+            col_target=col_target,
+            moda=moda,
+            region_label=region_label,
+            bln=bln,
+            thn=thn,
+            prev_bln=prev_bln,
+            prev_thn=prev_thn,
+            col_prev=col_prev,
+            col_curr=col_curr,
+            col_cum_prev=col_cum_prev,
+            col_cum_curr=col_cum_curr,
+            prov=prov
+        )
+        p1_text = f"*(Executive Summary - Sistem Fallback)*\n\n{p1}"
+        p2_text = p2
+
+    if p1_text: st.markdown(p1_text)
+    if p2_text: st.markdown(p2_text)
+    st.markdown("---")
 
     return {
         'moda': moda,
         'table_no': table_no,
         'label': label,
-        'col_target': col_target,
-        'prov': prov,
-        'bln': bln,
-        'thn': thn,
-        'prev_bln': prev_bln,
-        'prev_thn': prev_thn,
-        'col_prev': col_prev,
-        'col_curr': col_curr,
-        'col_cum_prev': col_cum_prev,
-        'col_cum_curr': col_cum_curr,
-        'report_flat': report_flat,
-        'df_display': report_display,
-        'styled_df': styled_report_display,
-        'table_markdown': report_display_brs.reset_index().to_markdown(index=False),
-        'cache_key': get_cache_key(prov, moda, col_target, bln, thn),
+        'p1': p1_text,
+        'p2': p2_text,
+        'df_display': report_display
     }
-
-def render_tabel_dan_narasi(all_collected_data):
-    if not all_collected_data:
-        return
-
-    grouped = defaultdict(list)
-    for item in all_collected_data:
-        grouped[item['moda']].append(item)
-
-    batch_results_all = {}
-    for moda, items in grouped.items():
-        items = sorted(items, key=lambda x: x.get('table_no') or 0)
-        if not items:
-            continue
-
-        with st.spinner(f"Menyusun executive summary batch untuk {moda} menggunakan Gemini AI..."):
-            batch_result = generate_narrative_ai_batch(
-                items=items,
-                prov=items[0]['prov'],
-                moda=moda,
-                bln=items[0]['bln'],
-                thn=items[0]['thn'],
-                prev_bln=items[0]['prev_bln'],
-                prev_thn=items[0]['prev_thn']
-            )
-            batch_results_all.update(batch_result)
-
-    current_moda = None
-    for item in all_collected_data:
-        if current_moda != item['moda']:
-            current_moda = item['moda']
-            icon = "✈️" if current_moda == "Transportasi Udara" else "🚢"
-            st.subheader(f"{icon} Moda: {current_moda}")
-
-        label = item['label']
-        table_no = item['table_no']
-        prov = item['prov']
-        bln = item['bln']
-        thn = item['thn']
-        
-        angkutan = "Angkutan Udara" if current_moda == "Transportasi Udara" else "Angkutan Laut"
-        judul = f"Tabel {table_no} Perkembangan {label} {angkutan} Dalam Negeri Provinsi {prov}, {bln} {thn}"
-        st.markdown(f"**{judul}**")
-        
-        st.dataframe(item['styled_df'], use_container_width=True)
-        
-        cache_key = item['cache_key']
-        res = batch_results_all.get(cache_key, {})
-        text_final = res.get('text')
-        region_label = "Bandara" if current_moda == "Transportasi Udara" else "Pelabuhan/Kabupaten"
-
-        if text_final:
-            p1, p2 = parse_two_paragraphs(text_final)
-            p1_text = f"*(Executive Summary - Gemini AI)*\n\n{p1}" if p1 else ""
-            p2_text = p2 if p2 else ""
-        else:
-            p1, p2 = generate_narrative_fallback(
-                report_flat=item['report_flat'],
-                col_target=item['col_target'],
-                moda=current_moda,
-                region_label=region_label,
-                bln=bln,
-                thn=thn,
-                prev_bln=item['prev_bln'],
-                prev_thn=item['prev_thn'],
-                col_prev=item['col_prev'],
-                col_curr=item['col_curr'],
-                col_cum_prev=item['col_cum_prev'],
-                col_cum_curr=item['col_cum_curr'],
-                prov=prov
-            )
-            p1_text = f"*(Executive Summary - Sistem Fallback)*\n\n{p1}"
-            p2_text = p2
-
-        if p1_text:
-            st.markdown(p1_text)
-        if p2_text:
-            st.markdown(p2_text)
-            
-        item['p1'] = p1_text
-        item['p2'] = p2_text
-
-        st.markdown("---")
 
 def show_report_page():
     st.title("📋 Laporan Komparatif Strategis")
@@ -668,34 +583,36 @@ def show_report_page():
     if st.button("Generate Semua Laporan (Udara & Laut)"):
         all_collected_data = []
         
+        # 1. Moda Transportasi Udara
         moda_udara = "Transportasi Udara"
         df_cu, df_pr, df_cc, df_cp, p_bln, p_thn = get_comparison_data(prov, thn, bln, moda_udara)
         if not df_cu.empty:
+            st.subheader("✈️ Moda: Transportasi Udara")
             targets_udara = [
                 ('penumpang_datang', 'Penumpang Datang'), ('penumpang_berangkat', 'Penumpang Berangkat'),
                 ('barang_bongkar_kg', 'Barang Bongkar (Kg)'), ('barang_muat_kg', 'Barang Muat (Kg)')
             ]
             for i, (col, label) in enumerate(targets_udara, start=1):
-                res_item = format_report_table_data(df_cu, df_pr, df_cc, df_cp, col, label, 'nama_bandara', thn, bln, p_bln, p_thn, table_no=i, prov=prov, moda=moda_udara)
+                res_item = format_and_render_single_table(df_cu, df_pr, df_cc, df_cp, col, label, 'nama_bandara', thn, bln, p_bln, p_thn, table_no=i, prov=prov, moda=moda_udara)
                 all_collected_data.append(res_item)
 
+        # 2. Moda Transportasi Laut
         moda_laut = "Transportasi Laut"
         df_cu_l, df_pr_l, df_cc_l, df_cp_l, p_bln_l, p_thn_l = get_comparison_data(prov, thn, bln, moda_laut)
         if not df_cu_l.empty:
+            st.subheader("🚢 Moda: Transportasi Laut")
             row_col_laut = 'nama_kabkota' if prov == "Papua Tengah" else 'nama_pelabuhan'
             targets_laut = [
                 ('dn_penumpang_turun', 'Penumpang Turun'), ('dn_penumpang_naik', 'Penumpang Naik'),
                 ('dn_bongkar_barang_ton', 'Barang Bongkar (Ton)'), ('dn_muat_barang_ton', 'Barang Muat (Ton)')
             ]
             for i, (col, label) in enumerate(targets_laut, start=1):
-                res_item = format_report_table_data(df_cu_l, df_pr_l, df_cc_l, df_cp_l, col, label, row_col_laut, thn, bln, p_bln_l, p_thn_l, table_no=i, prov=prov, moda=moda_laut)
+                res_item = format_and_render_single_table(df_cu_l, df_pr_l, df_cc_l, df_cp_l, col, label, row_col_laut, thn, bln, p_bln_l, p_thn_l, table_no=i, prov=prov, moda=moda_laut)
                 all_collected_data.append(res_item)
 
         if all_collected_data:
-            render_tabel_dan_narasi(all_collected_data)
-
             master_word_file = create_complete_master_word_report(prov, thn, bln, all_collected_data)
-            st.success("Semua data laporan berhasil digenerate!")
+            st.success("Semua data laporan dan narasi berhasil digenerate sepenuhnya!")
             st.download_button(
                 label="📥 Download Master Dokumen Word (Semua 8 Tabel & Narasi)",
                 data=master_word_file,
