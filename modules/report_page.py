@@ -230,87 +230,26 @@ def _arah_dinamis(pct):
     return "stabil"
 
 def generate_narrative_ai(df_flat, col_target, moda, prov, bln, thn, prev_bln, prev_thn):
-    # Mengambil daftar kunci API dari secrets (mendukung berbagai penamaan key)
     api_keys = st.secrets.get("API-GEMINI-KEYS") or st.secrets.get("API_GEMINI_KEYS") or st.secrets.get("API_GEMINI_KEY")
-    
-    # Jika tidak ada kunci sama sekali, langsung kembalikan None agar beralih ke fallback
-    if not api_keys:
-        return None
-
-    # Jika api_keys berupa string tunggal, ubah ke dalam bentuk list agar bisa di-loop
-    if isinstance(api_keys, str):
-        api_keys = [api_keys]
+    if not api_keys: return None
+    if isinstance(api_keys, str): api_keys = [api_keys]
 
     data_str = df_flat.to_markdown()
-    
     prompt = f"""
     Bertindaklah sebagai analis data senior di Badan Pusat Statistik (BPS) yang profesional namun komunikatif. 
-    Buatlah tepat 2 paragraf ringkasan naratif dari data tabel statistik di bawah ini. Pisahkan paragraf pertama dan kedua dengan baris kosong ganda (\\n\\n). Adaptasi gaya bahasa Berita Resmi Statistik (BRS), namun buatlah kalimatnya lebih mengalir, natural, dan tidak kaku. 
-    
-    Variasikan pilihan kata (jangan monoton menggunakan frasa "tercatat sebanyak"). Anda bisa menggunakan kata ganti seperti "mencapai", "berada di angka", "menyentuh", "mengalami lonjakan", atau "terkoreksi".
-    Nilai "Undefined" artinya tidak bisa dihitung karena pembaginya nol. Jika ada Undefined, sesuaikan narasinya dengan logis atau lewati sebutan persentasenya.
-
-    Struktur Narasi yang Wajib Diikuti:
-    1. Paragraf Pertama (Bulan ke Bulan / M-to-M):
-       - Bandingkan total indikator pada {bln} {thn} dengan {prev_bln} {prev_thn}.
-       - Jika merinci ke tingkat wilayah (pelabuhan/bandara), cukup soroti wilayah dengan peningkatan tertinggi dan/atau penurunan terdalam agar efisien.
-    
-    2. Paragraf Kedua (Kumulatif Tahun ke Tahun / Y-on-Y):
-       - Bandingkan total kumulatif dari Januari hingga {bln} {thn} dengan periode yang sama di tahun sebelumnya.
-       - Berikan rincian singkat wilayah mana yang memiliki lonjakan kumulatif tertinggi atau penurunan terdalam.
-
-    Konteks Data:
-    - Provinsi: {prov}
-    - Moda Transportasi: {moda}
-    - Indikator: {col_target}
-    
-    Tabel Data:
-    {data_str}
-    
-    Aturan Tambahan:
-    - Langsung berikan output teks saja yang berisi 2 paragraf, tanpa kalimat pengantar/penutup.
-    - Format angka sesuai kaidah Bahasa Indonesia (titik untuk ribuan, koma untuk desimal).
+    Buatlah tepat 2 paragraf ringkasan naratif dari data tabel statistik di bawah ini. Pisahkan paragraf pertama dan kedua dengan baris kosong ganda (\\n\\n).
+    Konteks Data: Provinsi {prov}, Moda {moda}, Indikator {col_target}, Periode {bln} {thn} vs {prev_bln} {prev_thn}.
+    Tabel Data:\n{data_str}
+    Aturan: Langsung berikan output 2 paragraf teks saja tanpa pengantar/penutup. Format angka sesuai kaidah Indonesia.
     """
-
-    # Melakukan perulangan mencoba setiap API Key yang tersedia secara berurutan
     for key in api_keys:
-        if not key.strip():
-            continue
+        if not key.strip(): continue
         try:
             client = genai.Client(api_key=key.strip())
-            response = client.models.generate_content(
-                model='gemini-1.5-flash',
-                contents=prompt,
-                config=genai.types.GenerateContentConfig(temperature=0.1)
-            )
-            # Jika berhasil mendapatkan teks dari AI, langsung kembalikan hasilnya
-            if response and response.text:
-                return response.text
-        except Exception as e:
-            # Jika kunci ini gagal/error (misal kuota habis atau salah key), catat dan lanjut ke key berikutnya
-            continue
-            
-    # Jika seluruh kunci di dalam list terbukti gagal, kembalikan None
+            response = client.models.generate_content(model='gemini-1.5-flash', contents=prompt, config=genai.types.GenerateContentConfig(temperature=0.1))
+            if response and response.text: return response.text
+        except Exception: continue
     return None
-
-with st.spinner(f"Menyusun narasi untuk indikator {label} menggunakan AI..."):
-  narasi_ai = generate_narrative_ai(report_display_brs, label, moda, prov, bln, thn, prev_bln, prev_thn)
-  if narasi_ai is None:
-      # Hanya dijalankan jika seluruh API key gagal atau tidak ditemukan
-      p1, p2 = generate_narrative_fallback(
-          report_flat, col_target, moda, region_label, bln, thn, prev_bln, prev_thn,
-          col_prev, col_curr, col_cum_prev, col_cum_curr
-      )
-      para1_text = f"*(Semua API AI Gagal - Narasi Dihasilkan oleh Sistem Fallback)*\n\n{p1}"
-      para2_text = p2
-  else:
-      parts = [p.strip() for p in narasi_ai.split('\n\n') if p.strip()]
-      if len(parts) >= 2:
-          para1_text = f"*(Narasi Berhasil Dihasilkan oleh Gemini AI)*\n\n{parts[0]}"
-          para2_text = "\n\n".join(parts[1:])
-      elif len(parts) == 1:
-          para1_text = f"*(Narasi Berhasil Dihasilkan oleh Gemini AI)*\n\n{parts[0]}"
-          para2_text = ""
 
 def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln, thn, prev_bln, prev_thn,
                                 col_prev, col_curr, col_cum_prev, col_cum_curr):
@@ -350,7 +289,6 @@ def create_complete_master_word_report(prov, thn, bln, all_report_data):
         if p1: doc.add_paragraph(p1)
         
         df_to_export = df_display.reset_index()
-        
         total_rows = len(df_to_export) + 2
         total_cols = len(df_to_export.columns)
         
@@ -365,7 +303,6 @@ def create_complete_master_word_report(prov, thn, bln, all_report_data):
                 lvl_0, lvl_1 = str(col_tuple[0]), str(col_tuple[1])
             else:
                 lvl_0, lvl_1 = str(col_tuple), ""
-                
             hdr_row_0.cells[j].text = lvl_0
             hdr_row_1.cells[j].text = lvl_1
 
@@ -378,12 +315,9 @@ def create_complete_master_word_report(prov, thn, bln, all_report_data):
         except Exception:
             pass
 
-        # Mengisi Data Baris ke dalam Tabel Word
         for i, row_data in enumerate(df_to_export.values):
             row_cells = table.rows[i + 2].cells
             first_col_val = str(row_data[0]) if not pd.isna(row_data[0]) else ""
-            
-            # Cek apakah baris ini adalah baris separator (Bandara lainnya / Pelabuhan lainnya)
             is_separator_row = "lainnya" in first_col_val.lower()
             
             for j, val in enumerate(row_data):
@@ -391,12 +325,10 @@ def create_complete_master_word_report(prov, thn, bln, all_report_data):
                     row_cells[j].text = first_col_val
                 else:
                     if is_separator_row:
-                        # Kosongkan sel selain kolom pertama pada baris separator
                         row_cells[j].text = ""
                     else:
                         row_cells[j].text = format_id_number(val, decimals=2)
             
-            # Jika baris separator, lakukan merge horizontal dari kolom pertama sampai kolom terakhir
             if is_separator_row and total_cols > 1:
                 try:
                     row_cells[0].merge(row_cells[total_cols - 1])
@@ -411,8 +343,8 @@ def create_complete_master_word_report(prov, thn, bln, all_report_data):
     doc.save(file_stream)
     file_stream.seek(0)
     return file_stream
-  
-def process_single_indicator(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, label, row_col, thn, bln, prev_bln, prev_thn, table_no, prov, moda):
+
+def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, label, row_col, thn, bln, prev_bln, prev_thn, table_no=None, prov=None, moda=None):
     curr_grp = df_curr.groupby(row_col)[col_target].sum()
     prev_grp = df_prev.groupby(row_col)[col_target].sum()
     cum_curr_grp = df_cum_curr.groupby(row_col)[col_target].sum()
@@ -457,18 +389,35 @@ def process_single_indicator(df_curr, df_prev, df_cum_curr, df_cum_prev, col_tar
     report_display_brs = build_brs_display_table(report_flat, prov, moda)
 
     region_label = "Bandara" if moda == "Transportasi Udara" else "Kabupaten/Kota"
-    narasi_ai = generate_narrative_ai(report_display_brs, label, moda, prov, bln, thn, prev_bln, prev_thn)
-    
+
+    with st.spinner(f"Menyusun narasi untuk indikator {label}..."):
+        narasi_ai = generate_narrative_ai(report_display_brs, label, moda, prov, bln, thn, prev_bln, prev_thn)
+        
     if narasi_ai is None:
         p1, p2 = generate_narrative_fallback(
             report_flat, col_target, moda, region_label, bln, thn, prev_bln, prev_thn,
             col_prev, col_curr, col_cum_prev, col_cum_curr
         )
-        p1_text, p2_text = f"*(Narasi Sistem)*\n\n{p1}", p2
+        para1_text = f"*(Narasi Sistem Fallback)*\n\n{p1}"
+        para2_text = p2
     else:
         parts = [p.strip() for p in narasi_ai.split('\n\n') if p.strip()]
-        p1_text = f"*(Narasi AI)*\n\n{parts[0]}" if parts else ""
-        p2_text = "\n\n".join(parts[1:]) if len(parts) >= 2 else ""
+        if len(parts) >= 2:
+            para1_text = f"*(Narasi Gemini AI)*\n\n{parts[0]}"
+            para2_text = "\n\n".join(parts[1:])
+        elif len(parts) == 1:
+            para1_text = f"*(Narasi Gemini AI)*\n\n{parts[0]}"
+            para2_text = ""
+            
+    if para1_text: st.markdown(para1_text)
+
+    st.write("")
+    angkutan = "Angkutan Udara" if moda == "Transportasi Udara" else "Angkutan Laut"
+    if table_no is not None:
+        judul = f"Tabel {table_no} Perkembangan {label} {angkutan} Dalam Negeri Provinsi {prov}, {bln} {thn}"
+        st.markdown(f"**{judul}**")
+    else:
+        st.markdown(f"##### 📝 Indikator: {label}")
 
     cum_label = f"Kumulatif {label}"
     report_display = report_display_brs.copy()
@@ -476,22 +425,31 @@ def process_single_indicator(df_curr, df_prev, df_cum_curr, df_cum_prev, col_tar
         (label, col_prev), (label, col_curr), (label, 'M-to-M (%)'),
         (cum_label, col_cum_prev), (cum_label, col_cum_curr), (cum_label, 'Y-on-Y (%)')
     ])
-
-    # Render UI Streamlit
-    if p1_text: st.markdown(p1_text)
-    st.markdown(f"**Tabel {table_no} Perkembangan {label} {moda} Provinsi {prov}, {bln} {thn}**")
-
     pct_cols = [(label, 'M-to-M (%)'), (cum_label, 'Y-on-Y (%)')]
-    st.dataframe(report_display.style.format(format_id_number).background_gradient(subset=pct_cols, cmap='RdYlGn'))
-    if p2_text: st.markdown(p2_text)
+
+    def style_brs_hierarchy(styler):
+        def highlight_rows(row):
+            styles = [''] * len(row)
+            val = str(row.name).strip().lower()
+            if val in ['subtotal', 'sub total', 'jumlah', 'total', 'total keseluruhan']:
+                styles = ['font-weight: bold; background-color: #fce8b2;'] * len(row)
+            elif 'lainnya' in val:
+                styles = ['font-style: italic; background-color: #e8eaed;'] * len(row)
+            return styles
+        styler = styler.format(format_id_number).background_gradient(subset=pct_cols, cmap='RdYlGn')
+        styler = styler.apply(highlight_rows, axis=1)
+        return styler
+
+    st.dataframe(style_brs_hierarchy(report_display.style))
+    if para2_text: st.markdown(para2_text)
     st.markdown("---")
 
     return {
         'moda': moda,
         'table_no': table_no,
         'label': label,
-        'p1': p1_text,
-        'p2': p2_text,
+        'p1': para1_text,
+        'p2': para2_text,
         'df_display': report_display
     }
 
@@ -506,7 +464,6 @@ def show_report_page():
     if st.button("Generate Semua Laporan (Udara & Laut)"):
         all_collected_data = []
         
-        # Proses Moda Transportasi Udara (4 Tabel)
         moda_udara = "Transportasi Udara"
         df_cu, df_pr, df_cc, df_cp, p_bln, p_thn = get_comparison_data(prov, thn, bln, moda_udara)
         if not df_cu.empty:
@@ -516,10 +473,9 @@ def show_report_page():
                 ('barang_bongkar_kg', 'Barang Bongkar (Kg)'), ('barang_muat_kg', 'Barang Muat (Kg)')
             ]
             for i, (col, label) in enumerate(targets_udara, start=1):
-                res_item = process_single_indicator(df_cu, df_pr, df_cc, df_cp, col, label, 'nama_bandara', thn, bln, p_bln, p_thn, i, prov, moda_udara)
+                res_item = format_report_table(df_cu, df_pr, df_cc, df_cp, col, label, 'nama_bandara', thn, bln, p_bln, p_thn, table_no=i, prov=prov, moda=moda_udara)
                 all_collected_data.append(res_item)
 
-        # Proses Moda Transportasi Laut (4 Tabel)
         moda_laut = "Transportasi Laut"
         df_cu_l, df_pr_l, df_cc_l, df_cp_l, p_bln_l, p_thn_l = get_comparison_data(prov, thn, bln, moda_laut)
         if not df_cu_l.empty:
@@ -529,10 +485,9 @@ def show_report_page():
                 ('dn_bongkar_barang_ton', 'Barang Bongkar (Ton)'), ('dn_muat_barang_ton', 'Barang Muat (Ton)')
             ]
             for i, (col, label) in enumerate(targets_laut, start=1):
-                res_item = process_single_indicator(df_cu_l, df_pr_l, df_cc_l, df_cp_l, col, label, 'nama_kabkota', thn, bln, p_bln_l, p_thn_l, i, prov, moda_laut)
+                res_item = format_report_table(df_cu_l, df_pr_l, df_cc_l, df_cp_l, col, label, 'nama_kabkota', thn, bln, p_bln_l, p_thn_l, table_no=i, prov=prov, moda=moda_laut)
                 all_collected_data.append(res_item)
 
-        # Jika data terkumpul, tampilkan tombol download master di paling atas atau bawah
         if all_collected_data:
             master_word_file = create_complete_master_word_report(prov, thn, bln, all_collected_data)
             st.success("Semua data laporan berhasil digenerate!")
