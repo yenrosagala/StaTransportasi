@@ -4,4 +4,4 @@ plotly
 sqlalchemy
 lxml
 xlrd
-google-generativeai
+google.genai
