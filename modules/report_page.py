@@ -561,7 +561,7 @@ def format_and_render_single_table(df_curr, df_prev, df_cum_curr, df_cum_prev, c
     angkutan = "Angkutan Udara" if moda == "Transportasi Udara" else "Angkutan Laut"
     judul = f"Tabel {table_no} Perkembangan {label} {angkutan} Dalam Negeri Provinsi {prov}, {bln} {thn}"
     st.markdown(f"**{judul}**")
-    st.dataframe(styled_df, width='stretch)
+    st.dataframe(styled_df, width='stretch')
 
     # Generate Narasi Satu-Satu secara Berurutan hingga Selesai
     region_label = "Bandara" if moda == "Transportasi Udara" else "Pelabuhan/Kabupaten"
