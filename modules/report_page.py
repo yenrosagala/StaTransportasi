@@ -281,12 +281,11 @@ def create_complete_master_word_report(prov, thn, bln, all_report_data):
         label = item['label']
         p1 = item['p1']
         p2 = item['p2']
-        df_display = item['df_display'] # DataFrame dengan MultiIndex Columns (2 Level)
+        df_display = item['df_display']
 
         doc.add_heading(f"Moda: {moda_name} - Tabel {table_no}: {label}", level=2)
         if p1: doc.add_paragraph(p1)
         
-        # --- MEMBUAT TABEL DENGAN 2 LEVEL HEADER (MERGE CELL) ---
         df_to_export = df_display.reset_index()
         
         total_rows = len(df_to_export) + 2
@@ -295,11 +294,9 @@ def create_complete_master_word_report(prov, thn, bln, all_report_data):
         table = doc.add_table(rows=total_rows, cols=total_cols)
         table.style = 'Table Grid'
         
-        # Baris Header 0 dan Baris Header 1
         hdr_row_0 = table.rows[0]
         hdr_row_1 = table.rows[1]
         
-        # Mengisi Header Level 0 dan Level 1 berdasarkan MultiIndex Pandas
         for j, col_tuple in enumerate(df_to_export.columns):
             if isinstance(col_tuple, tuple):
                 lvl_0, lvl_1 = str(col_tuple[0]), str(col_tuple[1])
@@ -309,7 +306,6 @@ def create_complete_master_word_report(prov, thn, bln, all_report_data):
             hdr_row_0.cells[j].text = lvl_0
             hdr_row_1.cells[j].text = lvl_1
 
-        # Melakukan Merge Cell secara vertikal & horizontal pada header
         try:
             hdr_row_0.cells[0].merge(hdr_row_1.cells[0])
             if total_cols >= 4:
@@ -319,16 +315,30 @@ def create_complete_master_word_report(prov, thn, bln, all_report_data):
         except Exception:
             pass
 
-        # Mengisi Data Baris ke dalam Tabel Word dengan Format Angka Indonesia (2 Desimal)
+        # Mengisi Data Baris ke dalam Tabel Word
         for i, row_data in enumerate(df_to_export.values):
             row_cells = table.rows[i + 2].cells
+            first_col_val = str(row_data[0]) if not pd.isna(row_data[0]) else ""
+            
+            # Cek apakah baris ini adalah baris separator (Bandara lainnya / Pelabuhan lainnya)
+            is_separator_row = "lainnya" in first_col_val.lower()
+            
             for j, val in enumerate(row_data):
                 if j == 0:
-                    # Kolom pertama adalah nama wilayah/bandara (string teks biasa)
-                    row_cells[j].text = "" if pd.isna(val) else str(val)
+                    row_cells[j].text = first_col_val
                 else:
-                    # Kolom data angka atau persentase, terapkan format_id_number 2 desimal
-                    row_cells[j].text = format_id_number(val, decimals=2)
+                    if is_separator_row:
+                        # Kosongkan sel selain kolom pertama pada baris separator
+                        row_cells[j].text = ""
+                    else:
+                        row_cells[j].text = format_id_number(val, decimals=2)
+            
+            # Jika baris separator, lakukan merge horizontal dari kolom pertama sampai kolom terakhir
+            if is_separator_row and total_cols > 1:
+                try:
+                    row_cells[0].merge(row_cells[total_cols - 1])
+                except Exception:
+                    pass
                 
         doc.add_paragraph()
         if p2: doc.add_paragraph(p2)
