@@ -290,9 +290,10 @@ def generate_narrative_ai(
     prompt = f"""
 Bertindaklah sebagai analis data senior di Badan Pusat Statistik (BPS) yang profesional namun komunikatif.
 
-Tugas:
-Buat tepat 2 paragraf narasi ringkas dari tabel statistik berikut.
-Pisahkan paragraf pertama dan kedua dengan satu baris kosong.
+Buat narasi 2 paragraf, masing-masing minimal 3 kalimat.
+Paragraf pertama membahas kondisi bulan berjalan, perubahan terhadap bulan sebelumnya, dan faktor yang paling menonjol.
+Paragraf kedua membahas kumulatif Januari-{bln} {thn}, perbandingan dengan periode tahun sebelumnya, dan ringkasan interpretasi.
+Gunakan bahasa formal, angka format Indonesia, dan jangan tulis pengantar atau penutup.
 
 Konteks:
 - Provinsi: {prov}
@@ -303,13 +304,7 @@ Konteks:
 
 Data:
 {data_str}
-
-Aturan:
-- Hanya keluarkan 2 paragraf narasi.
-- Jangan tulis judul, pengantar, atau penutup.
-- Gunakan format angka Indonesia.
-- Jangan sebutkan bahwa Anda adalah AI.
-""".strip()
+"""
 
     last_error = None
 
