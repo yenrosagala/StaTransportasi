@@ -295,6 +295,36 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
 
     data_str = df_flat.to_markdown(index=False)
     
+    prompt = (
+        "Bertindaklah sebagai Kepala Pusat Statistik yang menyusun Executive Summary eksekutif untuk Dewan Pimpinan dan Pengambil Kebijakan.\n"
+        f"Buat ringkasan naratif tingkat tinggi (executive summary) tepat 2 paragraf untuk indikator \"{label}\" pada moda {moda} di Provinsi {prov} ({bln} {thn} dibanding {prev_bln} {prev_thn}).\n\n"
+        "Aturan:\n"
+        "- Paragraf pertama fokus pada kinerja bulanan/MTM, arah tren, dan total agregat wilayah utama.\n"
+        "- Paragraf kedua fokus pada performa kumulatif YTD/YOY, proyeksi pertumbuhan, dan deviasi signifikan antar wilayah.\n"
+        "- Gunakan bahasa formal, tajam, analitis, format angka Indonesia.\n"
+        "- Jangan berikan pengantar atau penutup, langsung berikan 2 paragraf teks yang dipisahkan oleh satu baris kosong (\\n\\n).\n\n"
+        "Data Tabel:\n"
+        f"{data_str}"
+    )
+
+    for key in api_keys:
+        try:
+            client = genai.Client(api_key=key.strip())
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=genai.types.GenerateContentConfig(temperature=0.2, max_output_tokens=1024)
+            )
+            raw_text = getattr(response, "text", None)
+            if raw_text and str(raw_text).strip():
+                text_clean = str(raw_text).strip()
+                cache[cache_key] = text_clean
+                return text_clean, "Gemini AI"
+        except Exception:
+            continue
+            
+    return None, "Failed"
+    
     def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln, prev_thn, model_name="gemini-2.5-flash"):
     cache_key = get_cache_key(prov, moda, label, bln, thn)
     ensure_narasi_cache()
