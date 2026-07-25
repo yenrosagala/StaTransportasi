@@ -89,9 +89,13 @@ def normalisasi_entitas(nama):
     return mapping_khusus.get(clean_name, clean_name)
 
 def build_brs_display_table(report_flat, prov, moda):
-    """Menyusun ulang dataframe menjadi bentuk hierarki BRS (ada Subtotal, Pemisah, & Total)."""
+    """
+    Menyusun ulang dataframe menjadi bentuk hierarki BPS yang presisi 
+    (Utama -> Subtotal -> Separator -> Lainnya -> Subtotal/Jumlah -> Grand Total).
+    """
     df = report_flat.copy()
     
+    # Pisahkan Grand Total asli
     if 'TOTAL' in df.index:
         total_row = df.loc[['TOTAL']]
         df = df.drop(index='TOTAL')
@@ -101,6 +105,7 @@ def build_brs_display_table(report_flat, prov, moda):
     df = df.reset_index()
     row_col = df.columns[0]
     
+    # Normalisasi nama entitas
     df[row_col] = df[row_col].apply(normalisasi_entitas)
     df = df.groupby(row_col).sum(min_count=1).reset_index() 
     
@@ -110,45 +115,44 @@ def build_brs_display_table(report_flat, prov, moda):
     if prov in HIERARKI_BRS and moda in HIERARKI_BRS[prov]:
         config = HIERARKI_BRS[prov][moda]
         
-        # 1. Kelompok Utama
+        # 1. Kelompok Utama (Bandara Utama)
         df_utama = df[df[row_col].isin(config["utama"])].copy()
         if not df_utama.empty:
             df_utama[row_col] = pd.Categorical(df_utama[row_col], categories=config["utama"], ordered=True)
             df_utama = df_utama.sort_values(row_col)
             potongan.append(df_utama)
             
-        # 2. Kelompok Lainnya & Pemisah (Separator)
-        if len(config["lainnya"]) > 0 and not df_utama.empty:
-            # Baris Subtotal untuk Kelompok Utama
-            sub_utama = pd.DataFrame(df_utama[raw_cols].sum()).T
-            sub_utama[row_col] = config["label_subtotal"]
+            # Jika ada kelompok lainnya, wajibkan Subtotal untuk kelompok utama
+            if len(config["lainnya"]) > 0:
+                sub_utama = pd.DataFrame(df_utama[raw_cols].sum()).T
+                sub_utama[row_col] = config["label_subtotal"]
+                potongan.append(sub_utama)
             
-            # Baris Pemisah / Separator (misal: "Bandara lainnya")
+        # 2. Kelompok Lainnya & Baris Pemisah (Separator)
+        if len(config["lainnya"]) > 0:
             separator = pd.DataFrame([{row_col: config["teks_separator"]}])
             for c in df.columns: 
                 if c != row_col: 
                     separator[c] = np.nan
+            potongan.append(separator)
             
-            # Data Kelompok Lainnya
             df_lain = df[df[row_col].isin(config["lainnya"])].copy()
             if not df_lain.empty:
                 df_lain[row_col] = pd.Categorical(df_lain[row_col], categories=config["lainnya"], ordered=True)
                 df_lain = df_lain.sort_values(row_col)
+                potongan.append(df_lain)
                 
-                # Baris Subtotal untuk Kelompok Lainnya
+                # Baris Subtotal/Jumlah untuk Kelompok Lainnya
                 sub_lain = pd.DataFrame(df_lain[raw_cols].sum()).T
-                sub_lain[row_col] = config["label_subtotal"] + " " 
+                sub_lain[row_col] = config["label_subtotal"] + " "  # Spasi pembeda agar tidak bentrok key index
+                potongan.append(sub_lain)
                 
-                potongan.extend([sub_utama, separator, df_lain, sub_lain])
-            else:
-                potongan.append(sub_utama)
-        
         if not potongan and not df.empty:
             potongan.append(df)
     else:
         potongan.append(df)
         
-    # 3. Baris Grand Total
+    # 3. Baris Grand Total Keseluruhan
     if not total_row.empty:
         t_label = HIERARKI_BRS.get(prov, {}).get(moda, {}).get("label_total", "TOTAL")
         total_row = total_row.reset_index()
@@ -164,6 +168,7 @@ def build_brs_display_table(report_flat, prov, moda):
     col_prev, col_curr = raw_cols[0], raw_cols[1]
     col_cum_prev, col_cum_curr = raw_cols[2], raw_cols[3]
     
+    # Hitung ulang persentase M-to-M dan Y-on-Y secara aman dari division by zero
     prev_vals_res = res[col_prev].values
     curr_vals_res = res[col_curr].values
     with np.errstate(divide='ignore', invalid='ignore'):
