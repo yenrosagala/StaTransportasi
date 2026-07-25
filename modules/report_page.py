@@ -383,7 +383,7 @@ def format_report_table(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, 
     report['M-to-M (%)'] = pd.Series(mtm_pct, index=report.index).replace([np.inf, -np.inf], np.nan)
 
     report[col_cum_prev] = cum_prev_grp.reindex(report.index).fillna(0)
-    report[col_cum_curr] = cum_cum_grp.reindex(report.index).fillna(0)
+    report[col_cum_curr] = cum_curr_grp.reindex(report.index).fillna(0)
     
     cum_prev_vals = report[col_cum_prev].values
     cum_curr_vals = report[col_cum_curr].values
