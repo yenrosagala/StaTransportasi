@@ -114,12 +114,84 @@ def show_admin_page():
 
     # 2. Database Maintenance Section
     with st.expander("⚠️ Zone Danger: Manage Database"):
-        st.warning("Tindakan ini akan menghapus seluruh data yang ada!")
-        if st.button("Reset/Delete Database"):
-            if delete_db():
-                st.success("Database deleted successfully!")
+        st.subheader("🗑️ Hapus Data Berdasarkan Filter")
+        st.caption("Pilih moda, provinsi, tahun, dan bulan dari data yang ingin dihapus. Pilih \"SEMUA\" untuk tidak membatasi filter tersebut.")
+
+        engine_del = get_engine()
+
+        del1, del2, del3, del4 = st.columns(4)
+        with del1:
+            moda_del_label = st.selectbox(
+                "Moda Transportasi (Hapus Data)", ["Transportasi Udara", "Transportasi Laut"], key="del_moda"
+            )
+            table_del = "transportasi_udara" if moda_del_label == "Transportasi Udara" else "transportasi_laut"
+        with del2:
+            provinsi_del = st.selectbox("Provinsi (Filter Hapus)", ["SEMUA"] + list(PEMETAAN_WILAYAH.keys()), key="del_provinsi")
+        with del3:
+            try:
+                years_df = pd.read_sql(text(f"SELECT DISTINCT tahun FROM {table_del}"), engine_del)
+                year_options = ["SEMUA"] + sorted(years_df['tahun'].astype(str).unique().tolist())
+            except Exception:
+                year_options = ["SEMUA"]
+            tahun_del = st.selectbox("Tahun (Filter Hapus)", year_options, key="del_tahun")
+        with del4:
+            bulan_del = st.selectbox(
+                "Bulan (Filter Hapus)", ["SEMUA"] + list(MONTH_MAP.keys()), key="del_bulan"
+            )
+
+        conditions = []
+        params_del = {}
+        if provinsi_del != "SEMUA":
+            conditions.append("UPPER(nama_provinsi) = :provinsi")
+            params_del["provinsi"] = provinsi_del.upper()
+        if tahun_del != "SEMUA":
+            conditions.append("CAST(tahun AS TEXT) = :tahun")
+            params_del["tahun"] = str(tahun_del)
+        if bulan_del != "SEMUA":
+            conditions.append("bulan = :bulan")
+            params_del["bulan"] = bulan_del
+
+        where_clause = " AND ".join(conditions) if conditions else "1=1"
+
+        try:
+            count_result = pd.read_sql(
+                text(f"SELECT COUNT(*) as n FROM {table_del} WHERE {where_clause}"),
+                engine_del, params=params_del
+            )
+            jumlah_baris_del = int(count_result['n'].iloc[0])
+        except Exception as e:
+            st.error(f"Gagal membaca data: {e}")
+            jumlah_baris_del = 0
+
+        if jumlah_baris_del == 0:
+            st.info("Tidak ada data yang cocok dengan filter di atas.")
+        else:
+            if not conditions:
+                st.error(f"🚨 Tidak ada filter aktif — **SEMUA {jumlah_baris_del} baris** pada tabel `{table_del}` akan terhapus!")
             else:
-                st.info("Database file not found.")
+                st.warning(f"⚠️ **{jumlah_baris_del} baris data** pada tabel `{table_del}` cocok dengan filter di atas dan akan dihapus permanen.")
+
+            confirm_del = st.checkbox(
+                "Saya yakin ingin menghapus data ini secara permanen.", key="confirm_delete_filtered"
+            )
+            if st.button("🗑️ Hapus Data Sesuai Filter", disabled=not confirm_del, key="btn_delete_filtered"):
+                try:
+                    with engine_del.begin() as conn:
+                        conn.execute(text(f"DELETE FROM {table_del} WHERE {where_clause}"), params_del)
+                    st.success(f"✅ Berhasil menghapus {jumlah_baris_del} baris data dari `{table_del}`.")
+                    st.session_state.pop("confirm_delete_filtered", None)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Gagal menghapus data: {e}")
+
+        st.divider()
+        with st.expander("🚨 Opsi Ekstrem: Hapus SELURUH Database (Semua Tabel & Periode)"):
+            st.warning("Tindakan ini akan menghapus seluruh file database, termasuk semua moda dan semua periode!")
+            if st.button("Reset/Delete Seluruh Database"):
+                if delete_db():
+                    st.success("Database berhasil dihapus seluruhnya!")
+                else:
+                    st.info("File database tidak ditemukan.")
 
     # 3. Manual Data Correction Section
     st.subheader("🛠️ Koreksi Data Manual")
