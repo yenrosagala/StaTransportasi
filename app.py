@@ -4,6 +4,7 @@ from modules.dashboard_page import show_dashboard_page
 from modules.report_page import show_report_page
 import sys
 from pathlib import Path
+from google import genai
 
 # Add project root to Python path
 ROOT_DIR = Path(__file__).resolve().parent
