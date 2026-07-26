@@ -6,6 +6,8 @@ import plotly.graph_objects as go
 from sqlalchemy import text
 from google import genai
 from modules.database import get_engine
+from modules.config import PEMETAAN_WILAYAH
+import plotly.express as px
 
 logger = logging.getLogger(__name__)
 if not logger.handlers:
