@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import random
 import io
-import docx
+from docx import Document
 import re
 import time
 import logging
@@ -357,7 +357,7 @@ def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln
     return para1, para2
 
 def create_complete_master_word_report(prov, thn, bln, all_report_data):
-    doc = docx.Document()
+    doc = Document.Document()
     doc.add_heading(f"Laporan Komprehensif Perkembangan Transportasi Provinsi {prov} - {bln} {thn}", level=1)
     doc.add_paragraph(f"Dokumen ini memuat seluruh tabel hierarki BRS dan narasi strategis moda Transportasi Udara dan Transportasi Laut.")
     doc.add_paragraph()
