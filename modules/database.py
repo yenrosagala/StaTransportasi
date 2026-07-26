@@ -2,11 +2,15 @@ from sqlalchemy import create_engine, text
 import pandas as pd
 import os
 
-DB_PATH = 'transportasi_papua.db'
-ENGINE = create_engine(f'sqlite:///{DB_PATH}')
-
 def get_engine():
-    return ENGINE
+    # Ambil connection string dari st.secrets atau environment variable
+    db_url = os.getenv("DATABASE_URL") or st.secrets.get("DATABASE_URL")
+    
+    # Fallback jika menggunakan format postgres:// ubah jadi postgresql://
+    if db_url and db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+        
+    return create_engine(db_url)
 
 def init_db():
     # Tables are created automatically by pandas.to_sql, 
