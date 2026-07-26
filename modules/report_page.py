@@ -558,7 +558,7 @@ def render_tables_and_narratives(all_collected_data):
         angkutan = "Angkutan Udara" if current_moda == "Transportasi Udara" else "Angkutan Laut"
         judul = f"Tabel {item['table_no']} Perkembangan {item['label']} {angkutan} Dalam Negeri Provinsi {item['prov']}, {item['bln']} {item['thn']}"
         st.markdown(f"**{judul}**")
-        st.dataframe(item['styled_df'], use_container_width=True)
+        st.dataframe(item['styled_df'], width='stretch')
 
         # 2. Generate dan Sisipkan Narasi Tepat di Bawah Tabel Bersesuaian
         region_label = "Bandara" if current_moda == "Transportasi Udara" else "Pelabuhan/Kabupaten"
@@ -567,7 +567,7 @@ def render_tables_and_narratives(all_collected_data):
         with h1:
             st.markdown(f"**📝 Executive Summary — {item['label']}**")
         with h2:
-            if st.button("🔄 Regenerasi", key=f"regen_report_{item['table_no']}", use_container_width=True):
+            if st.button("🔄 Regenerasi", key=f"regen_report_{item['table_no']}", width='stretch'):
                 ensure_narasi_cache()
                 cache_key = get_cache_key(item['prov'], current_moda, item['label'], item['bln'], item['thn'])
                 st.session_state["narasi_cache"].pop(cache_key, None)
