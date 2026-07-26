@@ -281,13 +281,37 @@ def parse_two_paragraphs(text):
     if len(parts) == 1: return parts[0], ""
     return None, None
 
+def get_narrative_from_db(prov, moda, label, thn, bln):
+    """Mengambil narasi yang sudah tersimpan di database."""
+    try:
+        engine = get_engine()
+        query = text("""
+            SELECT narrative_text, source FROM ai_narratives_cache 
+            WHERE provinsi = :prov AND moda = :moda AND indikator = :ind AND tahun = :thn AND bulan = :bln
+        """)
+        df = pd.read_sql(query, engine, params={"prov": prov, "moda": moda, "ind": label, "thn": int(thn), "bln": bln})
+        if not df.empty:
+            return df.iloc[0]['narrative_text'], df.iloc[0]['source']
+    except Exception:
+        pass
+    return None, None
+
+def save_narrative_to_db(prov, moda, label, thn, bln, text_content, source):
+    """Menyimpan narasi baru ke database secara permanen."""
+    try:
+        engine = get_engine()
+        with engine.begin() as conn:
+            conn.execute(text("""
+                INSERT OR REPLACE INTO ai_narratives_cache (provinsi, moda, indikator, tahun, bulan, narrative_text, source)
+                VALUES (:prov, :moda, :ind, :thn, :bln, :txt, :src)
+            """), {"prov": prov, "moda": moda, "ind": label, "thn": int(thn), "bln": bln, "txt": text_content, "src": source})
+    except Exception as e:
+        logger.error(f"Gagal menyimpan narasi ke database: {e}")
+
 def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln, prev_thn, model_name="gemini-2.5-flash"):
-    cache_key = get_cache_key(prov, moda, label, bln, thn)
-    ensure_narasi_cache()
-    cache = st.session_state["narasi_cache"]
-    
-    if cache_key in cache:
-        return cache[cache_key], "Cache"
+    saved_text, saved_source = get_narrative_from_db(prov, moda, label, thn, bln)
+    if saved_text:
+        return saved_text, f"{saved_source} (DB)"
 
     api_keys = get_gemini_api_keys()
     if not api_keys:
