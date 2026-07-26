@@ -466,14 +466,9 @@ def prepare_table_item(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, l
     col_curr, col_prev = f"{bln} {thn}", f"{prev_bln} {prev_thn}"
     col_cum_curr, col_cum_prev = f"Jan-{bln} {thn}", f"Jan-{bln} {int(thn)-1}"
 
-    report[col_prev] = prev_grp.reindex(report.index).fillna(0)
-    report[col_curr] = curr_grp.reindex(report.index).fillna(0)
-    
-    prev_vals = report[col_prev].values
-    curr_vals = report[col_curr].values
-    with np.errstate(divide='ignore', invalid='ignore'):
-        mtm_pct = np.where(prev_vals == 0, np.nan, ((curr_vals - prev_vals) / prev_vals) * 100)
-    report['M-to-M (%)'] = pd.Series(mtm_pct, index=report.index).replace([np.inf, -np.inf], np.nan)
+    report[col_prev] = prev_grp
+    report[col_curr] = curr_grp
+    report['M-to-M (%)'] = ((report[col_curr] - report[col_prev]) / report[col_prev] * 100).replace([np.inf, -np.inf], np.nan).fillna(None)2
 
     report[col_cum_prev] = cum_prev_grp.reindex(report.index).fillna(0)
     report[col_cum_curr] = df_cum_curr.groupby(row_col)[col_target].sum().reindex(report.index).fillna(0)
