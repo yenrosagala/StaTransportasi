@@ -468,7 +468,7 @@ def prepare_table_item(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, l
 
     report[col_prev] = prev_grp
     report[col_curr] = curr_grp
-    report['M-to-M (%)'] = ((report[col_curr] - report[col_prev]) / report[col_prev] * 100).replace([np.inf, -np.inf], np.nan).fillna(None)2
+    report['M-to-M (%)'] = ((report[col_curr] - report[col_prev]) / report[col_prev] * 100).replace([np.inf, -np.inf], np.nan).fillna(None)
 
     report[col_cum_prev] = cum_prev_grp.reindex(report.index).fillna(0)
     report[col_cum_curr] = df_cum_curr.groupby(row_col)[col_target].sum().reindex(report.index).fillna(0)
