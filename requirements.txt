@@ -7,4 +7,4 @@ xlrd
 google-genai
 tabulate
 matplotlib
-python-docx
+python-docx>=1.1.0
