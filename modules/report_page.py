@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import random
 import io
-from docx import Document
+import docx
 import re
 import time
 import logging
@@ -281,37 +281,13 @@ def parse_two_paragraphs(text):
     if len(parts) == 1: return parts[0], ""
     return None, None
 
-def get_narrative_from_db(prov, moda, label, thn, bln):
-    """Mengambil narasi yang sudah tersimpan di database."""
-    try:
-        engine = get_engine()
-        query = text("""
-            SELECT narrative_text, source FROM ai_narratives_cache 
-            WHERE provinsi = :prov AND moda = :moda AND indikator = :ind AND tahun = :thn AND bulan = :bln
-        """)
-        df = pd.read_sql(query, engine, params={"prov": prov, "moda": moda, "ind": label, "thn": int(thn), "bln": bln})
-        if not df.empty:
-            return df.iloc[0]['narrative_text'], df.iloc[0]['source']
-    except Exception:
-        pass
-    return None, None
-
-def save_narrative_to_db(prov, moda, label, thn, bln, text_content, source):
-    """Menyimpan narasi baru ke database secara permanen."""
-    try:
-        engine = get_engine()
-        with engine.begin() as conn:
-            conn.execute(text("""
-                INSERT OR REPLACE INTO ai_narratives_cache (provinsi, moda, indikator, tahun, bulan, narrative_text, source)
-                VALUES (:prov, :moda, :ind, :thn, :bln, :txt, :src)
-            """), {"prov": prov, "moda": moda, "ind": label, "thn": int(thn), "bln": bln, "txt": text_content, "src": source})
-    except Exception as e:
-        logger.error(f"Gagal menyimpan narasi ke database: {e}")
-
 def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln, prev_thn, model_name="gemini-2.5-flash"):
-    saved_text, saved_source = get_narrative_from_db(prov, moda, label, thn, bln)
-    if saved_text:
-        return saved_text, f"{saved_source} (DB)"
+    cache_key = get_cache_key(prov, moda, label, bln, thn)
+    ensure_narasi_cache()
+    cache = st.session_state["narasi_cache"]
+    
+    if cache_key in cache:
+        return cache[cache_key], "Cache"
 
     api_keys = get_gemini_api_keys()
     if not api_keys:
@@ -381,7 +357,7 @@ def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln
     return para1, para2
 
 def create_complete_master_word_report(prov, thn, bln, all_report_data):
-    doc = Document()
+    doc = docx.Document()
     doc.add_heading(f"Laporan Komprehensif Perkembangan Transportasi Provinsi {prov} - {bln} {thn}", level=1)
     doc.add_paragraph(f"Dokumen ini memuat seluruh tabel hierarki BRS dan narasi strategis moda Transportasi Udara dan Transportasi Laut.")
     doc.add_paragraph()
@@ -417,18 +393,14 @@ def create_complete_master_word_report(prov, thn, bln, all_report_data):
             if isinstance(col_tuple, tuple):
                 lvl_0 = str(col_tuple[0]).strip()
                 lvl_1 = str(col_tuple[1]).strip()
-                
-                # Bersihkan duplikasi string baris baru (jika ada teks berlapis)
-                clean_lvl_0 = lvl_0.split('\n')[0].strip()
-                
                 if j == 0:
                     hdr_row_0.cells[j].text = "Wilayah / Entitas"
                     hdr_row_1.cells[j].text = ""
                 else:
-                    hdr_row_0.cells[j].text = clean_lvl_0
-                    hdr_row_1.cells[j].text = lvl_1 if lvl_1 and lvl_1 != clean_lvl_0 else ""
+                    hdr_row_0.cells[j].text = lvl_0
+                    hdr_row_1.cells[j].text = lvl_1 if lvl_1 and lvl_1 != lvl_0 else ""
             else:
-                hdr_row_0.cells[j].text = str(col_tuple).split('\n')[0].strip()
+                hdr_row_0.cells[j].text = str(col_tuple).strip()
                 hdr_row_1.cells[j].text = ""
 
         # Mencegah merge berlebihan; batasi hanya pada header utama yang bersesuaian tanpa lebih dari satu line acak
@@ -494,9 +466,14 @@ def prepare_table_item(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, l
     col_curr, col_prev = f"{bln} {thn}", f"{prev_bln} {prev_thn}"
     col_cum_curr, col_cum_prev = f"Jan-{bln} {thn}", f"Jan-{bln} {int(thn)-1}"
 
-    report[col_prev] = prev_grp
-    report[col_curr] = curr_grp
-    report['M-to-M (%)'] = ((report[col_curr] - report[col_prev]) / report[col_prev] * 100).replace([np.inf, -np.inf], np.nan).fillna(None)
+    report[col_prev] = prev_grp.reindex(report.index).fillna(0)
+    report[col_curr] = curr_grp.reindex(report.index).fillna(0)
+    
+    prev_vals = report[col_prev].values
+    curr_vals = report[col_curr].values
+    with np.errstate(divide='ignore', invalid='ignore'):
+        mtm_pct = np.where(prev_vals == 0, np.nan, ((curr_vals - prev_vals) / prev_vals) * 100)
+    report['M-to-M (%)'] = pd.Series(mtm_pct, index=report.index).replace([np.inf, -np.inf], np.nan)
 
     report[col_cum_prev] = cum_prev_grp.reindex(report.index).fillna(0)
     report[col_cum_curr] = df_cum_curr.groupby(row_col)[col_target].sum().reindex(report.index).fillna(0)
@@ -585,6 +562,18 @@ def render_tables_and_narratives(all_collected_data):
 
         # 2. Generate dan Sisipkan Narasi Tepat di Bawah Tabel Bersesuaian
         region_label = "Bandara" if current_moda == "Transportasi Udara" else "Pelabuhan/Kabupaten"
+
+        h1, h2 = st.columns([5, 1])
+        with h1:
+            st.markdown(f"**📝 Executive Summary — {item['label']}**")
+        with h2:
+            if st.button("🔄 Regenerasi", key=f"regen_report_{item['table_no']}", use_container_width=True):
+                ensure_narasi_cache()
+                cache_key = get_cache_key(item['prov'], current_moda, item['label'], item['bln'], item['thn'])
+                st.session_state["narasi_cache"].pop(cache_key, None)
+                st.session_state["narasi_cache"].pop(cache_key + "|fallback", None)
+                st.rerun()
+
         with st.spinner(f"Menyusun Executive Summary untuk {item['label']}..."):
             text_final, source = generate_single_narrative_ai(
                 item['report_display_brs'].reset_index(), 
@@ -602,23 +591,30 @@ def render_tables_and_narratives(all_collected_data):
             p1_text = f"*(Executive Summary - Gemini AI)*\n\n{p1}" if p1 else ""
             p2_text = p2 if p2 else ""
         else:
-            p1, p2 = generate_narrative_fallback(
-                report_flat=item['report_flat'],
-                col_target=item['col_target'],
-                moda=current_moda,
-                region_label=region_label,
-                bln=item['bln'],
-                thn=item['thn'],
-                prev_bln=item['prev_bln'],
-                prev_thn=item['prev_thn'],
-                col_prev=item['col_prev'],
-                col_curr=item['col_curr'],
-                col_cum_prev=item['col_cum_prev'],
-                col_cum_curr=item['col_cum_curr'],
-                prov=item['prov']
-            )
-            p1_text = f"*(Executive Summary - Sistem Fallback)*\n\n{p1}"
-            p2_text = p2
+            ensure_narasi_cache()
+            fallback_cache_key = get_cache_key(item['prov'], current_moda, item['label'], item['bln'], item['thn']) + "|fallback"
+            cache = st.session_state["narasi_cache"]
+            if fallback_cache_key in cache:
+                p1_text, p2_text = cache[fallback_cache_key]
+            else:
+                p1, p2 = generate_narrative_fallback(
+                    report_flat=item['report_flat'],
+                    col_target=item['col_target'],
+                    moda=current_moda,
+                    region_label=region_label,
+                    bln=item['bln'],
+                    thn=item['thn'],
+                    prev_bln=item['prev_bln'],
+                    prev_thn=item['prev_thn'],
+                    col_prev=item['col_prev'],
+                    col_curr=item['col_curr'],
+                    col_cum_prev=item['col_cum_prev'],
+                    col_cum_curr=item['col_cum_curr'],
+                    prov=item['prov']
+                )
+                p1_text = f"*(Executive Summary - Sistem Fallback)*\n\n{p1}"
+                p2_text = p2
+                cache[fallback_cache_key] = (p1_text, p2_text)
 
         if p1_text: st.markdown(p1_text)
         if p2_text: st.markdown(p2_text)
@@ -668,13 +664,22 @@ def show_report_page():
                 global_table_counter += 1
 
         if all_collected_data:
-            render_tables_and_narratives(all_collected_data)
+            st.session_state['report_all_data'] = all_collected_data
+            st.session_state['report_meta'] = {'prov': prov, 'thn': thn, 'bln': bln}
 
-            master_word_file = create_complete_master_word_report(prov, thn, bln, all_collected_data)
-            st.success("Semua data laporan dan narasi berhasil digenerate sepenuhnya!")
-            st.download_button(
-                label="📥 Download Master Dokumen Word (Semua 8 Tabel & Narasi)",
-                data=master_word_file,
-                file_name=f"Master_Laporan_Transportasi_{prov}_{bln}_{thn}.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            )
+    if st.session_state.get('report_all_data'):
+        all_collected_data = st.session_state['report_all_data']
+        meta = st.session_state.get('report_meta', {'prov': prov, 'thn': thn, 'bln': bln})
+
+        render_tables_and_narratives(all_collected_data)
+
+        master_word_file = create_complete_master_word_report(
+            meta['prov'], meta['thn'], meta['bln'], all_collected_data
+        )
+        st.success("Semua data laporan dan narasi berhasil digenerate sepenuhnya!")
+        st.download_button(
+            label="📥 Download Master Dokumen Word (Semua 8 Tabel & Narasi)",
+            data=master_word_file,
+            file_name=f"Master_Laporan_Transportasi_{meta['prov']}_{meta['bln']}_{meta['thn']}.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
