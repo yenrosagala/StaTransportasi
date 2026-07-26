@@ -2,6 +2,14 @@ import streamlit as st
 from modules.admin_page import show_admin_page
 from modules.dashboard_page import show_dashboard_page
 from modules.report_page import show_report_page
+import sys
+from pathlib import Path
+
+# Add project root to Python path
+ROOT_DIR = Path(__file__).resolve().parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.append(str(ROOT_DIR))
+
 
 st.set_page_config(page_title="Dashboard Transportasi Papua", layout="wide")
 
