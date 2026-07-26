@@ -230,11 +230,17 @@ def ensure_dashboard_narasi_cache():
 
 
 def generate_section_narrative_ai(moda_nama, bln, thn, prev_bln, prev_thn,
-                                   penumpang_stats, barang_stats, satuan_barang,
-                                   model_name="gemini-2.5-flash"):
+                                   penumpang_stats, barang_stats, satuan_barang):
     api_keys = get_gemini_api_keys()
     if not api_keys:
         return None
+
+    # Daftar prioritas model yang akan dicoba berurutan
+    models_to_try = [
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+        "gemini-2.5-flash"
+    ]
 
     p_top, p_bot = _top_bottom(penumpang_stats['mtm_per_prov'])
     b_top, b_bot = _top_bottom(barang_stats['mtm_per_prov'])
@@ -271,21 +277,24 @@ def generate_section_narrative_ai(moda_nama, bln, thn, prev_bln, prev_thn,
         "- Format angka sesuai kaidah Bahasa Indonesia (titik untuk ribuan, koma untuk desimal)."
     )
 
+    # Lakukan perulangan ganda: iterasi setiap Key, lalu iterasi setiap Model
     for key in api_keys:
-        try:
-            client = genai.Client(api_key=key.strip())
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=genai.types.GenerateContentConfig(temperature=0.3)
-            )
-            raw_text = getattr(response, "text", None)
-            if raw_text and str(raw_text).strip():
-                return str(raw_text).strip()
-        except Exception:
-            continue
+        for model_name in models_to_try:
+            try:
+                client = genai.Client(api_key=key.strip())
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=genai.types.GenerateContentConfig(temperature=0.3)
+                )
+                raw_text = getattr(response, "text", None)
+                if raw_text and str(raw_text).strip():
+                    return str(raw_text).strip()
+            except Exception:
+                # Jika model gagal/kena limit, lanjut coba model berikutnya
+                continue
+                
     return None
-
 
 def generate_section_narrative_fallback(moda_nama, bln, thn, prev_bln, prev_thn,
                                          penumpang_stats, barang_stats, satuan_barang):
