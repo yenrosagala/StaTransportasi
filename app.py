@@ -13,10 +13,6 @@ if str(ROOT_DIR) not in sys.path:
 
 st.set_page_config(page_title="Dashboard Transportasi Papua", layout="wide")
 
-
-st.write(sys.executable)
-st.write(sys.path)
-
 def main():
     st.sidebar.title("📌 Navigasi")
     page = st.sidebar.radio("Pilih Halaman:", ["Dashboard Visualisasi", "Laporan Komparatif", "Admin & Upload Data"])
