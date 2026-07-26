@@ -348,13 +348,42 @@ def generate_section_narrative_fallback(moda_nama, bln, thn, prev_bln, prev_thn,
     return para1, para2
 
 
+def get_saved_narrative_from_db(engine, moda, thn, bln):
+    """Mengambil narasi yang sudah tersimpan di database."""
+    try:
+        query = text("SELECT narrative_text, source FROM ai_narratives_cache WHERE moda = :moda AND tahun = :thn AND bulan = :bln")
+        df = pd.read_sql(query, engine, params={"moda": moda, "thn": int(thn), "bln": bln})
+        if not df.empty:
+            return df.iloc[0]['narrative_text'], df.iloc[0]['source']
+    except Exception:
+        pass
+    return None, None
+
+def save_narrative_to_db(engine, moda, thn, bln, text_content, source):
+    """Menyimpan narasi baru ke database."""
+    try:
+        with engine.begin() as conn:
+            # Menggunakan INSERT OR REPLACE agar jika periode dibuka ulang/di-refresh, bisa diperbarui jika perlu
+            conn.execute(text("""
+                INSERT OR REPLACE INTO ai_narratives_cache (moda, tahun, bulan, narrative_text, source)
+                VALUES (:moda, :thn, :bln, :txt, :src)
+            """), {"moda": moda, "thn": int(thn), "bln": bln, "txt": text_content, "src": source})
+    except Exception as e:
+        logger.error(f"Gagal menyimpan narasi ke database: {e}")
+
 def render_section_narrative(moda_nama, table, engine, cols_penumpang, cols_barang, satuan_barang,
                               df_curr, df_prev, thn, bln, prev_thn, prev_bln):
-    ensure_dashboard_narasi_cache()
-    cache = st.session_state["dashboard_narasi_cache"]
-    cache_key = f"{table}|{thn}|{bln}"
-
-    if cache_key not in cache:
+    
+    # 1. Cek apakah narasi sudah ada di Database
+    saved_text, source = get_saved_narrative_from_db(engine, moda_nama, thn, bln)
+    
+    if saved_text:
+        # Jika sudah ada di database, langsung gunakan tanpa panggil AI lagi
+        parts = [p.strip() for p in saved_text.split("\n\n") if p.strip()]
+        para1 = parts[0] if parts else ""
+        para2 = "\n\n".join(parts[1:]) if len(parts) > 1 else ""
+    else:
+        # 2. Jika belum ada di database, jalankan proses generate (AI -> Fallback)
         df_cum_curr_raw = load_cumulative_data(engine, table, thn, bln)
         df_cum_prev_raw = load_cumulative_data(engine, table, thn - 1, bln)
         all_cols = cols_penumpang + cols_barang
@@ -368,24 +397,30 @@ def render_section_narrative(moda_nama, table, engine, cols_penumpang, cols_bara
             text_ai = generate_section_narrative_ai(
                 moda_nama, bln, thn, prev_bln, prev_thn, penumpang_stats, barang_stats, satuan_barang
             )
+            
         if text_ai:
-            parts = [p.strip() for p in text_ai.split("\n\n") if p.strip()]
-            para1 = parts[0] if parts else ""
-            para2 = "\n\n".join(parts[1:]) if len(parts) > 1 else ""
-            source = "Gemini AI"
+            full_text = text_ai
+            source = "Gemini AI (Saved)"
         else:
-            para1, para2 = generate_section_narrative_fallback(
+            para1_fb, para2_fb = generate_section_narrative_fallback(
                 moda_nama, bln, thn, prev_bln, prev_thn, penumpang_stats, barang_stats, satuan_barang
             )
-            source = "Sistem Fallback"
-        cache[cache_key] = (para1, para2, source)
+            full_text = f"{para1_fb}\n\n{para2_fb}"
+            source = "Sistem Fallback (Saved)"
+            
+        # Pisahkan untuk ditampilkan
+        parts = [p.strip() for p in full_text.split("\n\n") if p.strip()]
+        para1 = parts[0] if parts else ""
+        para2 = "\n\n".join(parts[1:]) if len(parts) > 1 else ""
 
-    para1, para2, source = cache[cache_key]
+        # 3. Simpan hasil generate ke database agar permanen
+        save_narrative_to_db(engine, moda_nama, thn, bln, full_text, source)
+
+    # Render ke UI Streamlit
     st.markdown(f"**📝 Ringkasan Naratif** *(Sumber: {source})*")
     st.markdown(para1)
     if para2:
         st.markdown(para2)
-
 
 # ==============================================================================
 # SECTION RENDERER (satu moda transportasi)
