@@ -106,13 +106,13 @@ def show_series_chart_section():
             markers=True, template='plotly_white'
         )
         fig.update_layout(xaxis_title="Periode", yaxis_title=variabel.replace('_', ' ').title())
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch)
 
         with st.expander("📋 Lihat Data di Balik Grafik"):
             st.dataframe(
                 df_plot.rename(columns={'periode': 'Periode', variabel: variabel.replace('_', ' ').title()})
                        .drop(columns=['tahun_int', 'month_num']),
-                use_container_width=True
+                width='stretch
             )
 
 
@@ -247,7 +247,7 @@ def show_admin_page():
                 st.session_state['df_to_edit'] = df_to_edit
 
         if 'df_to_edit' in st.session_state:
-            edited_df = st.data_editor(st.session_state['df_to_edit'], use_container_width=True, num_rows="dynamic")
+            edited_df = st.data_editor(st.session_state['df_to_edit'], width='stretch, num_rows="dynamic")
 
             if st.button("Simpan Perubahan"):
                 try:
@@ -372,7 +372,7 @@ def show_admin_page():
                     mcol[2].metric("Total Barang", f"{s['total_barang']:,.2f} {s['satuan_barang']}")
                     mcol[3].metric(f"Jumlah {s['label_lokasi']}", s['jumlah_lokasi'])
 
-                    st.dataframe(p['df'], use_container_width=True, height=200)
+                    st.dataframe(p['df'], width='stretch, height=200)
 
             if any_valid:
                 st.markdown("#### 3️⃣ Konfirmasi")
