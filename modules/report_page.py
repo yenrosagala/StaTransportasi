@@ -417,14 +417,18 @@ def create_complete_master_word_report(prov, thn, bln, all_report_data):
             if isinstance(col_tuple, tuple):
                 lvl_0 = str(col_tuple[0]).strip()
                 lvl_1 = str(col_tuple[1]).strip()
+                
+                # Bersihkan duplikasi string baris baru (jika ada teks berlapis)
+                clean_lvl_0 = lvl_0.split('\n')[0].strip()
+                
                 if j == 0:
                     hdr_row_0.cells[j].text = "Wilayah / Entitas"
                     hdr_row_1.cells[j].text = ""
                 else:
-                    hdr_row_0.cells[j].text = lvl_0
-                    hdr_row_1.cells[j].text = lvl_1 if lvl_1 and lvl_1 != lvl_0 else ""
+                    hdr_row_0.cells[j].text = clean_lvl_0
+                    hdr_row_1.cells[j].text = lvl_1 if lvl_1 and lvl_1 != clean_lvl_0 else ""
             else:
-                hdr_row_0.cells[j].text = str(col_tuple).strip()
+                hdr_row_0.cells[j].text = str(col_tuple).split('\n')[0].strip()
                 hdr_row_1.cells[j].text = ""
 
         # Mencegah merge berlebihan; batasi hanya pada header utama yang bersesuaian tanpa lebih dari satu line acak
