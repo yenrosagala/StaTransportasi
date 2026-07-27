@@ -115,6 +115,11 @@ def process_laut(df_raw, tahun, bulan):
         prov_code, _ = extract_code_and_name(row[0])
         kab_code, kab_name = extract_code_and_name(row[1])
         pel_code, pel_name = extract_code_and_name(row[2])
+        
+        # 🚨 FILTER BARU: Lewati baris "JUMLAH" atau data yang tidak memiliki kode valid
+        if not prov_code or not kab_code or not pel_code:
+            continue
+            
         parsed_data.append({
             'tahun': str(tahun), 'bulan': bulan, 'kode_provinsi': prov_code,
             'kode_kabkota': kab_code, 'nama_kabkota': kab_name, 
@@ -133,6 +138,11 @@ def process_udara(df_raw, tahun, bulan):
         prov_code, _ = extract_code_and_name(row[0])
         kab_code, kab_name = extract_code_and_name(row[1])
         ban_code, ban_name = extract_code_and_name(row[2])
+        
+        # 🚨 FILTER BARU: Lewati baris "JUMLAH" atau data yang tidak memiliki kode valid
+        if not prov_code or not kab_code or not ban_code:
+            continue
+            
         parsed_data.append({
             'tahun': str(tahun), 'bulan': bulan, 'kode_provinsi': prov_code,
             'kode_kabkota': kab_code, 'nama_kabkota': kab_name, 
