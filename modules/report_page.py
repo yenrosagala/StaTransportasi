@@ -269,10 +269,11 @@ def get_gemini_api_keys():
     return unique_keys
 
 def parse_two_paragraphs(text):
-    if not text or not str(text).strip(): return None, None
-    parts = [p.strip() for p in str(text).strip().split("") 
-        if p.strip()]
-            if len(parts) >= 2: return parts[0], "".join(parts[1:])
+    if not text or not str(text).strip(): 
+        return None, None
+    parts = [p.strip() for p in str(text).strip().split("\n\n") 
+    if p.strip()]
+    if len(parts) >= 2: return parts[0], "\n\n".join(parts[1:])
     if len(parts) == 1: return parts[0], ""
     return None, None
 
