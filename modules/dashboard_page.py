@@ -348,8 +348,12 @@ def generate_section_narrative_fallback(moda_nama, bln, thn, prev_bln, prev_thn,
 
 
 def _generate_and_cache_section_narrative(cache, cache_key, moda_nama, table, engine,
-                                           cols_penumpang, cols_barang, satuan_barang,
-                                           df_curr, df_prev, thn, bln, prev_thn, prev_bln):
+                                         cols_penumpang, cols_barang, satuan_barang,
+                                         df_curr, df_prev, thn, bln, prev_thn, prev_bln):
+    # Cek apakah narasi untuk periode dan tabel ini sudah ada di cache
+    if cache_key in cache:
+        return cache[cache_key]
+
     df_cum_curr_raw = load_cumulative_data(engine, table, thn, bln)
     df_cum_prev_raw = load_cumulative_data(engine, table, thn - 1, bln)
     all_cols = cols_penumpang + cols_barang
@@ -363,6 +367,7 @@ def _generate_and_cache_section_narrative(cache, cache_key, moda_nama, table, en
         text_ai = generate_section_narrative_ai(
             moda_nama, bln, thn, prev_bln, prev_thn, penumpang_stats, barang_stats, satuan_barang
         )
+        
     if text_ai:
         parts = [p.strip() for p in text_ai.split("\n\n") if p.strip()]
         para1 = parts[0] if parts else ""
@@ -373,28 +378,33 @@ def _generate_and_cache_section_narrative(cache, cache_key, moda_nama, table, en
             moda_nama, bln, thn, prev_bln, prev_thn, penumpang_stats, barang_stats, satuan_barang
         )
         source = "Sistem Fallback"
+        
+    # Simpan hasil (para1, para2, source) ke dalam cache session state
     cache[cache_key] = (para1, para2, source)
+    return cache[cache_key]
 
 
 def render_section_narrative(moda_nama, table, engine, cols_penumpang, cols_barang, satuan_barang,
-                              df_curr, df_prev, thn, bln, prev_thn, prev_bln):
+                            df_curr, df_prev, thn, bln, prev_thn, prev_bln):
     ensure_dashboard_narasi_cache()
     cache = st.session_state["dashboard_narasi_cache"]
     cache_key = f"{table}|{thn}|{bln}"
 
-    if cache_key not in cache:
-        _generate_and_cache_section_narrative(
-            cache, cache_key, moda_nama, table, engine, cols_penumpang, cols_barang, satuan_barang,
-            df_curr, df_prev, thn, bln, prev_thn, prev_bln
-        )
-
-    para1, para2, source = cache[cache_key]
+    # Panggil fungsi yang mengelola cache (akan mengambil dari memori jika sudah ada, atau men-generate baru jika belum)
+    para1, para2, source = _generate_and_cache_section_narrative(
+        cache, cache_key, moda_nama, table, engine, cols_penumpang, cols_barang, satuan_barang,
+        df_curr, df_prev, thn, bln, prev_thn, prev_bln
+    )
 
     h1, h2 = st.columns([5, 1])
     with h1:
         st.markdown(f"**📝 Ringkasan Naratif** *(Sumber: {source})*")
     with h2:
         if st.button("🔄 Regenerasi", key=f"regen_{cache_key}", width='stretch'):
+            # Hapus kunci cache khusus ini agar dipaksa membuat narasi baru dari API/Fallback
+            if cache_key in cache:
+                del cache[cache_key]
+            # Panggil ulang untuk mengisi cache dengan data baru
             _generate_and_cache_section_narrative(
                 cache, cache_key, moda_nama, table, engine, cols_penumpang, cols_barang, satuan_barang,
                 df_curr, df_prev, thn, bln, prev_thn, prev_bln
@@ -404,7 +414,6 @@ def render_section_narrative(moda_nama, table, engine, cols_penumpang, cols_bara
     st.markdown(para1)
     if para2:
         st.markdown(para2)
-
 
 # ==============================================================================
 # SECTION RENDERER (satu moda transportasi)
