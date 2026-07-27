@@ -296,13 +296,24 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
     data_str = df_flat.to_markdown(index=False)
     
     prompt = (
-        "Anda adalah Kepala Pusat Statistik / Penasihat Kebijakan Utama yang menyusun ringkasan eksekutif strategis berstandar tinggi bagi Dewan Pimpinan dan Pengambil Kebijakan.\n"
-        f"Buatlah narasi Executive Summary tingkat tinggi yang padat dan tajam (tepat 2 paragraf) untuk indikator statistik \"{label}\" pada moda {moda} Wilayah Provinsi {prov} periode komparasi {bln} {thn} terhadap {prev_bln} {prev_thn}.\n\n"
+        "Anda adalah seorang jurnalis data/ekonomi profesional di media arus utama (setara Kontan, Bisnis Indonesia, atau Reuters), "
+        "yang menulis laporan statistik dengan gaya jurnalistik yang tajam namun tetap akurat dan berimbang.\n"
+        f"Tulislah narasi berita (tepat 2 paragraf, masing-masing TEPAT 3 kalimat) tentang perkembangan \"{label}\" pada moda {moda} "
+        f"di Provinsi {prov} periode {bln} {thn} dibandingkan {prev_bln} {prev_thn}.\n\n"
         "Pedoman & Fokus Penulisan:\n"
-        "- Paragraf 1: Analisis komprehensif kinerja bulanan (Month-to-Month/MTM), arah tren sektoral, serta kontribusi agregat dari wilayah-wilayah utama dalam hierarki BRS.\n"
-        "- Paragraf 2: Analisis mendalam kinerja kumulatif (Year-to-Date / Year-on-Year), pembacaan deviasi pertumbuhan, serta signifikansi fluktuasi antarwilayah dalam kerangka ekonomi regional.\n"
-        "- Gunakan diksi birokratik profesional, objektif, analitis, dengan standarisasi format angka Indonesia.\n"
-        "- Jangan sertakan pengantar, sapaan, catatan kaki, ataupun penutup. Langsung berikan 2 paragraf teks yang dipisahkan oleh satu baris kosong (\\n\\n).\n\n"
+        "- Paragraf 1 (3 kalimat): Kalimat pertama adalah lead berita yang menyampaikan kondisi keseluruhan provinsi secara bulanan "
+        "(Month-to-Month) dengan gaya membuka berita yang menarik namun faktual. Kalimat kedua menyoroti wilayah/entitas dengan "
+        "kontribusi atau pertumbuhan TERTINGGI. Kalimat ketiga menyoroti wilayah/entitas dengan kontribusi atau pertumbuhan TERENDAH/"
+        "penurunan terdalam.\n"
+        "- Paragraf 2 (3 kalimat): Kalimat pertama menyampaikan kondisi kumulatif (Year-to-Date/Year-on-Year) provinsi secara keseluruhan. "
+        "Kalimat kedua menyoroti wilayah dengan kontribusi kumulatif TERTINGGI. Kalimat ketiga menyoroti wilayah dengan kontribusi "
+        "kumulatif TERENDAH.\n"
+        "- Gunakan gaya bahasa jurnalistik yang hidup dan bervariasi (mis. 'melonjak', 'menggeliat', 'anjlok', 'melemah', 'mencuri "
+        "perhatian', 'tampil kontras') namun tetap profesional, objektif, dan tidak sensasional/clickbait. Hindari diksi birokratik "
+        "kaku seperti 'tercatat sebanyak' yang berulang.\n"
+        "- Selalu sebutkan angka yang tepat dengan format Indonesia (titik untuk ribuan, koma untuk desimal).\n"
+        "- Jangan sertakan judul berita, pengantar, sapaan, catatan kaki, ataupun penutup. Langsung berikan 2 paragraf teks yang "
+        "dipisahkan oleh satu baris kosong (\\n\\n).\n\n"
         "Sumber Data Tabel:\n"
         f"{data_str}"
     )
@@ -403,19 +414,20 @@ def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln
     def _sentence_total_mtm():
         naik = total_mtm > 0
         options = [
-            f"{subject} pada {bln} {thn} tercatat sebanyak {fmt(total_curr)} {meta['satuan']}, "
-            f"{'naik' if naik else 'turun'} {abs_mtm} persen dibandingkan {prev_bln} {prev_thn} yang sebanyak {fmt(total_prev)} {meta['satuan']}.",
+            f"Denyut {subject.lower()} di Provinsi {prov} {'menggeliat' if naik else 'melemah'} pada {bln} {thn}, "
+            f"dengan angka mencapai {fmt(total_curr)} {meta['satuan']} atau {'melonjak' if naik else 'anjlok'} {abs_mtm} persen "
+            f"dibandingkan {prev_bln} {prev_thn} yang sebanyak {fmt(total_prev)} {meta['satuan']}.",
 
-            f"Secara keseluruhan, {subject.lower()} di Provinsi {prov} pada {bln} {thn} "
-            f"{'tumbuh' if naik else 'terkontraksi'} {abs_mtm} persen menjadi {fmt(total_curr)} {meta['satuan']}, "
-            f"dari sebelumnya {fmt(total_prev)} {meta['satuan']} pada {prev_bln} {prev_thn}.",
+            f"{subject} di Provinsi {prov} pada {bln} {thn} {'melesat' if naik else 'tertekan'} {abs_mtm} persen menjadi "
+            f"{fmt(total_curr)} {meta['satuan']}, dari sebelumnya {fmt(total_prev)} {meta['satuan']} pada {prev_bln} {prev_thn}.",
 
-            f"Dibandingkan {prev_bln} {prev_thn}, {subject.lower()} se-Provinsi {prov} pada {bln} {thn} "
-            f"{'bertambah' if naik else 'berkurang'} {abs_mtm} persen menjadi {fmt(total_curr)} {meta['satuan']}.",
+            f"Data terbaru menunjukkan {subject.lower()} se-Provinsi {prov} pada {bln} {thn} "
+            f"{'naik tajam' if naik else 'turun tajam'} sebesar {abs_mtm} persen dibandingkan sebulan sebelumnya, "
+            f"dari {fmt(total_prev)} {meta['satuan']} menjadi {fmt(total_curr)} {meta['satuan']}.",
 
-            f"Kinerja {subject.lower()} tingkat provinsi pada {bln} {thn} "
-            f"{'mengalami peningkatan' if naik else 'mengalami penurunan'} sebesar {abs_mtm} persen, "
-            f"dari {fmt(total_prev)} {meta['satuan']} pada {prev_bln} {prev_thn} menjadi {fmt(total_curr)} {meta['satuan']}.",
+            f"Sinyal {'positif' if naik else 'perlambatan'} terlihat dari {subject.lower()} Provinsi {prov} pada {bln} {thn}, "
+            f"yang {'bertumbuh' if naik else 'terkoreksi'} {abs_mtm} persen dari {fmt(total_prev)} {meta['satuan']} pada {prev_bln} {prev_thn} "
+            f"menjadi {fmt(total_curr)} {meta['satuan']}.",
         ]
         return random.choice(options)
 
@@ -424,17 +436,18 @@ def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln
             return ""
         naik = value > 0
         options = [
-            f"Kontributor tertinggi berasal dari {region_word} {entity['nama']}, yang "
-            f"{'tumbuh' if naik else 'menyusut paling ringan'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
+            f"{region_word.capitalize()} {entity['nama']} mencuri perhatian dengan "
+            f"{'lonjakan' if naik else 'penurunan paling ringan'} {fmt_pct(abs(value))} persen, mengantarkan angkanya ke "
+            f"{fmt(entity[value_field])} {meta['satuan']}.",
 
-            f"{region_word.capitalize()} {entity['nama']} tercatat sebagai penyumbang kinerja terbaik, dengan "
-            f"{'kenaikan' if naik else 'penurunan paling ringan'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
+            f"Performa paling menonjol datang dari {region_word} {entity['nama']}, yang "
+            f"{'melesat' if naik else 'nyaris tak tergoyahkan'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
 
-            f"Peningkatan paling signifikan terjadi di {region_word} {entity['nama']}, yang mencapai {fmt(entity[value_field])} {meta['satuan']} "
-            f"atau {'naik' if naik else 'turun'} {fmt_pct(abs(value))} persen.",
+            f"{region_word.capitalize()} {entity['nama']} tampil sebagai bintang utama periode ini, dengan "
+            f"{'kenaikan' if naik else 'penurunan tertahan'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
 
-            f"Dari sisi kontribusi, {region_word} {entity['nama']} tampil paling menonjol dengan "
-            f"{'pertumbuhan' if naik else 'penurunan paling minim'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
+            f"Lonjakan paling tajam dicatatkan {region_word} {entity['nama']}, yang {'melonjak' if naik else 'hanya melemah tipis'} "
+            f"{fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
         ]
         return random.choice(options)
 
@@ -443,34 +456,37 @@ def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln
             return ""
         turun = value < 0
         options = [
-            f"Sebaliknya, {region_word} {entity['nama']} menjadi kontributor terendah setelah "
-            f"{'terkoreksi' if turun else 'tumbuh paling lambat'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
+            f"Namun, cerita berbeda ditunjukkan {region_word} {entity['nama']}, yang "
+            f"{'anjlok' if turun else 'tumbuh paling lambat'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
 
-            f"Di sisi lain, kinerja {region_word} {entity['nama']} paling lemah, "
-            f"{'turun' if turun else 'hanya tumbuh'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
+            f"Di sisi lain, {region_word} {entity['nama']} tampil kontras dengan "
+            f"{'penurunan tajam' if turun else 'pertumbuhan paling minim'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
 
-            f"Penurunan terdalam tercatat di {region_word} {entity['nama']}, "
-            f"{'turun' if turun else 'tumbuh tipis'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
+            f"Kondisi berlawanan terjadi di {region_word} {entity['nama']}, yang "
+            f"{'melemah' if turun else 'nyaris stagnan'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
 
-            f"Sementara itu, {region_word} {entity['nama']} menjadi wilayah dengan capaian paling rendah, "
-            f"{'terkontraksi' if turun else 'nyaris stagnan dengan pertumbuhan'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
+            f"Sementara itu, {region_word} {entity['nama']} mencatatkan performa paling lemah, "
+            f"{'terperosok' if turun else 'hanya merangkak naik'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
         ]
         return random.choice(options)
 
     def _sentence_total_yoy():
         naik = total_yoy > 0
         options = [
-            f"Secara kumulatif, {subject.lower()} selama Januari–{bln} {thn} mencapai {fmt(total_cum_curr)} {meta['satuan']}, "
-            f"{'naik' if naik else 'turun'} {abs_yoy} persen dibandingkan Januari–{bln} {int(thn)-1} yang sebanyak {fmt(total_cum_prev)} {meta['satuan']}.",
+            f"Secara kumulatif, {subject.lower()} selama Januari–{bln} {thn} {'melesat' if naik else 'merosot'} ke angka "
+            f"{fmt(total_cum_curr)} {meta['satuan']}, {'naik' if naik else 'turun'} {abs_yoy} persen dibandingkan Januari–{bln} {int(thn)-1} "
+            f"yang sebanyak {fmt(total_cum_prev)} {meta['satuan']}.",
 
-            f"Akumulasi {subject.lower()} Provinsi {prov} dari Januari hingga {bln} {thn} tercatat sebanyak {fmt(total_cum_curr)} {meta['satuan']}, "
+            f"Tren sepanjang tahun berjalan menunjukkan {subject.lower()} Provinsi {prov} dari Januari hingga {bln} {thn} "
+            f"{'terus menanjak' if naik else 'terus melambat'} menjadi {fmt(total_cum_curr)} {meta['satuan']}, "
             f"atau {'naik' if naik else 'turun'} {abs_yoy} persen dibandingkan periode yang sama tahun sebelumnya.",
 
             f"Dibandingkan Januari–{bln} {int(thn)-1}, capaian kumulatif {subject.lower()} pada Januari–{bln} {thn} "
-            f"{'bertumbuh' if naik else 'menyusut'} {abs_yoy} persen menjadi {fmt(total_cum_curr)} {meta['satuan']}.",
+            f"{'melonjak' if naik else 'menyusut'} {abs_yoy} persen menjadi {fmt(total_cum_curr)} {meta['satuan']}.",
 
-            f"Kinerja kumulatif {subject.lower()} se-Provinsi {prov} sejak awal tahun hingga {bln} {thn} "
-            f"{'tumbuh' if naik else 'terkoreksi'} sebesar {abs_yoy} persen, dari {fmt(total_cum_prev)} {meta['satuan']} menjadi {fmt(total_cum_curr)} {meta['satuan']}.",
+            f"Akumulasi {subject.lower()} se-Provinsi {prov} sejak awal tahun hingga {bln} {thn} "
+            f"{'terus bergerak positif' if naik else 'terus tertekan'}, {'tumbuh' if naik else 'terkoreksi'} {abs_yoy} persen dari "
+            f"{fmt(total_cum_prev)} {meta['satuan']} menjadi {fmt(total_cum_curr)} {meta['satuan']}.",
         ]
         return random.choice(options)
 
@@ -693,7 +709,7 @@ def render_tables_and_narratives(all_collected_data):
 
         h1, h2 = st.columns([5, 1])
         with h1:
-            st.markdown(f"**📝 Executive Summary — {item['label']}**")
+            st.markdown(f"**📰 Laporan Naratif — {item['label']}**")
         with h2:
             if st.button("🔄 Regenerasi", key=f"regen_report_{item['table_no']}", width='stretch'):
                 ensure_narasi_cache()
@@ -702,7 +718,7 @@ def render_tables_and_narratives(all_collected_data):
                 st.session_state["narasi_cache"].pop(cache_key + "|fallback", None)
                 st.rerun()
 
-        with st.spinner(f"Menyusun Executive Summary untuk {item['label']}..."):
+        with st.spinner(f"Menyusun laporan naratif untuk {item['label']}..."):
             text_final, source = generate_single_narrative_ai(
                 item['report_display_brs'].reset_index(), 
                 item['label'], 
@@ -716,7 +732,7 @@ def render_tables_and_narratives(all_collected_data):
 
         if text_final:
             p1, p2 = parse_two_paragraphs(text_final)
-            p1_text = f"*(Executive Summary - Gemini AI)*\n\n{p1}" if p1 else ""
+            p1_text = f"*(Laporan Naratif - Gemini AI)*\n\n{p1}" if p1 else ""
             p2_text = p2 if p2 else ""
         else:
             ensure_narasi_cache()
@@ -740,7 +756,7 @@ def render_tables_and_narratives(all_collected_data):
                     col_cum_curr=item['col_cum_curr'],
                     prov=item['prov']
                 )
-                p1_text = f"*(Executive Summary - Sistem Fallback)*\n\n{p1}"
+                p1_text = f"*(Laporan Naratif - Sistem Fallback)*\n\n{p1}"
                 p2_text = p2
                 cache[fallback_cache_key] = (p1_text, p2_text)
 
