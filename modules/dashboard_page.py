@@ -236,6 +236,12 @@ def generate_section_narrative_ai(moda_nama, bln, thn, prev_bln, prev_thn,
     if not api_keys:
         return None
 
+    # Inisialisasi index rolling di st.session_state jika belum ada
+    if "gemini_key_index" not in st.session_state:
+        st.session_state["gemini_key_index"] = 0
+
+    num_keys = len(api_keys)
+    
     p_top, p_bot = _top_bottom(penumpang_stats['mtm_per_prov'])
     b_top, b_bot = _top_bottom(barang_stats['mtm_per_prov'])
     p_top_yoy, p_bot_yoy = _top_bottom(penumpang_stats['yoy_per_prov'])
@@ -271,7 +277,11 @@ def generate_section_narrative_ai(moda_nama, bln, thn, prev_bln, prev_thn,
         "- Format angka sesuai kaidah Bahasa Indonesia (titik untuk ribuan, koma untuk desimal)."
     )
 
-    for key in api_keys:
+    # Lakukan loop rolling berdasarkan index di session state
+    for attempt in range(num_keys):
+        current_idx = (st.session_state["gemini_key_index"] + attempt) % num_keys
+        key = api_keys[current_idx]
+        
         try:
             client = genai.Client(api_key=key.strip())
             response = client.models.generate_content(
@@ -281,11 +291,15 @@ def generate_section_narrative_ai(moda_nama, bln, thn, prev_bln, prev_thn,
             )
             raw_text = getattr(response, "text", None)
             if raw_text and str(raw_text).strip():
+                # Jika sukses, geser index key untuk pemanggilan berikutnya
+                st.session_state["gemini_key_index"] = (current_idx + 1) % num_keys
                 return str(raw_text).strip()
-        except Exception:
+        except Exception as e:
+            logger.warning("API Key ke-%d gagal: %s. Melakukan rolling ke key berikutnya...", current_idx + 1, e)
             continue
+            
     return None
-
+                                       
 
 def generate_section_narrative_fallback(moda_nama, bln, thn, prev_bln, prev_thn,
                                          penumpang_stats, barang_stats, satuan_barang):
