@@ -43,68 +43,94 @@ def count_existing_rows(engine, table_type, tahun, bulan):
         return 0
 
 
+def get_all_kabupaten():
+    """Daftar seluruh kabupaten/kota di semua provinsi, digabung & diurutkan."""
+    all_kab = []
+    for kabs in PEMETAAN_WILAYAH.values():
+        all_kab.extend(kabs)
+    return sorted(set(all_kab))
+
+
+def get_entity_options(engine, table, entity_col, kabupaten):
+    """Ambil daftar bandara/pelabuhan yang benar-benar ada di database,
+    difilter berdasarkan kabupaten yang dipilih (atau semua jika 'SEMUA')."""
+    query = f"SELECT DISTINCT {entity_col} FROM {table}"
+    params = {}
+    if kabupaten != "SEMUA":
+        kab_clean = kabupaten.replace('KABUPATEN ', '').replace('KOTA ', '').strip()
+        query += " WHERE (UPPER(nama_kabkota) = :kab_full OR UPPER(nama_kabkota) = :kab_clean)"
+        params = {"kab_full": kabupaten.upper(), "kab_clean": kab_clean.upper()}
+    try:
+        df = pd.read_sql(text(query), engine, params=params)
+        return sorted(df[entity_col].dropna().unique().tolist())
+    except Exception:
+        return []
+
+
+VAR_OPTIONS = {
+    "Transportasi Udara": [
+        'penumpang_berangkat', 'penumpang_datang', 'penumpang_transit',
+        'barang_muat_kg', 'barang_bongkar_kg', 'bagasi_muat_kg', 'bagasi_bongkar_kg',
+        'pos_muat_kg', 'pos_bongkar_kg', 'pesawat_berangkat', 'pesawat_datang'
+    ],
+    "Transportasi Laut": [
+        'dn_penumpang_turun', 'dn_penumpang_naik', 'dn_bongkar_barang_ton', 'dn_muat_barang_ton',
+        'ln_penumpang_turun', 'ln_penumpang_naik', 'ln_bongkar_barang_ton', 'ln_muat_barang_ton'
+    ]
+}
+
+
 def show_series_chart_section():
-    """Memungkinkan siapa saja membuat grafik time series dengan memilih
-    provinsi, multi kabupaten/kota, multi bandara/pelabuhan, dan multi variabel."""
+    """Analisis tren data antar periode. Dapat diakses siapa saja tanpa perlu
+    login sebagai admin. Filter: moda transportasi, kabupaten/kota, multi-select
+    bandara/pelabuhan, dan multi-select variabel (bisa membandingkan beberapa
+    indikator dan/atau beberapa lokasi sekaligus dalam satu grafik)."""
     engine = get_engine()
+
+    table_map = {"Transportasi Udara": "transportasi_udara", "Transportasi Laut": "transportasi_laut"}
+    entity_col_map = {"Transportasi Udara": "nama_bandara", "Transportasi Laut": "nama_pelabuhan"}
+    entity_label_map = {"Transportasi Udara": "Bandara", "Transportasi Laut": "Pelabuhan"}
 
     col1, col2 = st.columns(2)
     with col1:
         moda = st.selectbox("Moda Transportasi", ["Transportasi Udara", "Transportasi Laut"], key="series_moda")
+    table = table_map[moda]
+    entity_col = entity_col_map[moda]
+    entity_label = entity_label_map[moda]
+
     with col2:
-        provinsi = st.selectbox("Provinsi", list(PEMETAAN_WILAYAH.keys()), key="series_provinsi")
+        kabupaten = st.selectbox("Kabupaten/Kota", ["SEMUA"] + get_all_kabupaten(), key="series_kabupaten")
 
-    table = "transportasi_udara" if moda == "Transportasi Udara" else "transportasi_laut"
-    lokasi_col = "nama_bandara" if moda == "Transportasi Udara" else "nama_pelabuhan"
+    entity_options = get_entity_options(engine, table, entity_col, kabupaten)
+    entities_selected = st.multiselect(
+        f"{entity_label} (kosongkan untuk agregat total di wilayah terpilih)",
+        entity_options, key="series_entities"
+    )
 
-    # Ambil data awal berdasarkan provinsi untuk opsi kabupaten dan lokasi
-    try:
-        df_init = pd.read_sql(text(f"SELECT DISTINCT nama_kabkota, {lokasi_col} FROM {table} WHERE UPPER(nama_provinsi) = :prov"), engine, params={"prov": provinsi.upper()})
-    except Exception:
-        df_init = pd.DataFrame(columns=['nama_kabkota', lokasi_col])
-
-    kab_options = sorted(df_init['nama_kabkota'].dropna().unique().tolist()) if not df_init.empty else []
-    
-    col3, col4 = st.columns(2)
-    with col3:
-        selected_kab = st.multiselect("Kabupaten/Kota (Opsional)", kab_options, key="series_kabupaten")
-    
-    with col4:
-        # Filter opsi lokasi berdasarkan kabupaten jika dipilih
-        if selected_kab and not df_init.empty:
-            lokasi_options = sorted(df_init[df_init['nama_kabkota'].isin(selected_kab)][lokasi_col].dropna().unique().tolist())
-        else:
-            lokasi_options = sorted(df_init[lokasi_col].dropna().unique().tolist()) if not df_init.empty else []
-        selected_lokasi = st.multiselect(f"Pilih {'Bandara' if moda == 'Transportasi Udara' else 'Pelabuhan'} (Opsional)", lokasi_options, key="series_lokasi")
-
-    var_options = {
-        "Transportasi Udara": [
-            'penumpang_berangkat', 'penumpang_datang', 'penumpang_transit',
-            'barang_muat_kg', 'barang_bongkar_kg', 'bagasi_muat_kg', 'bagasi_bongkar_kg',
-            'pos_muat_kg', 'pos_bongkar_kg', 'pesawat_berangkat', 'pesawat_datang'
-        ],
-        "Transportasi Laut": [
-            'dn_penumpang_turun', 'dn_penumpang_naik', 'dn_bongkar_barang_ton', 'dn_muat_barang_ton',
-            'ln_penumpang_turun', 'ln_penumpang_naik', 'ln_bongkar_barang_ton', 'ln_muat_barang_ton'
-        ]
-    }
-    selected_vars = st.multiselect("Variabel Indikator (Minimal 1)", var_options[moda], default=[var_options[moda][0]], key="series_variabel")
+    variabel_list = st.multiselect(
+        "Variabel", VAR_OPTIONS[moda], default=[VAR_OPTIONS[moda][0]], key="series_variabel_multi"
+    )
 
     if st.button("📈 Tampilkan Grafik Series", key="series_generate"):
-        if not selected_vars:
-            st.warning("⚠️ Harap pilih minimal satu variabel indikator.")
+        if not variabel_list:
+            st.warning("⚠️ Pilih minimal satu variabel.")
             return
 
-        query = f"SELECT * FROM {table} WHERE UPPER(nama_provinsi) = :provinsi"
-        params = {"provinsi": provinsi.upper()}
-
-        if selected_kab:
-            query += " AND nama_kabkota IN :kab_list"
-            params["kab_list"] = tuple(selected_kab)
-
-        if selected_lokasi:
-            query += f" AND {lokasi_col} IN :lokasi_list"
-            params["lokasi_list"] = tuple(selected_lokasi)
+        query = f"SELECT * FROM {table}"
+        conditions = []
+        params = {}
+        if kabupaten != "SEMUA":
+            kab_clean = kabupaten.replace('KABUPATEN ', '').replace('KOTA ', '').strip()
+            conditions.append("(UPPER(nama_kabkota) = :kab_full OR UPPER(nama_kabkota) = :kab_clean)")
+            params["kab_full"] = kabupaten.upper()
+            params["kab_clean"] = kab_clean.upper()
+        if entities_selected:
+            placeholders = ", ".join(f":ent{i}" for i in range(len(entities_selected)))
+            conditions.append(f"{entity_col} IN ({placeholders})")
+            for i, e in enumerate(entities_selected):
+                params[f"ent{i}"] = e
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
 
         df = pd.read_sql(text(query), engine, params=params)
 
@@ -116,42 +142,65 @@ def show_series_chart_section():
         df['tahun_int'] = df['tahun'].astype(int)
         df['periode'] = df['bulan'] + " " + df['tahun'].astype(str)
 
-        # Groupby dan Melt untuk mendukung multi variabel & multi lokasi
         group_cols = ['tahun_int', 'month_num', 'periode']
-        if selected_lokasi:
-            group_cols.append(lokasi_col)
-        elif selected_kab:
-            group_cols.append('nama_kabkota')
+        series_frames = []
+        for var in variabel_list:
+            var_title = var.replace('_', ' ').title()
+            if entities_selected:
+                g = df.groupby(group_cols + [entity_col])[var].sum().reset_index()
+                g['seri'] = g[entity_col] + " – " + var_title
+                g = g.drop(columns=[entity_col])
+            else:
+                g = df.groupby(group_cols)[var].sum().reset_index()
+                g['seri'] = var_title
+            g = g.rename(columns={var: 'nilai'})
+            series_frames.append(g)
 
-        df_grouped = df.groupby(group_cols)[selected_vars].sum().reset_index().sort_values(['tahun_int', 'month_num'])
-        df_melted = df_grouped.melt(
-            id_vars=group_cols,
-            value_vars=selected_vars,
-            var_name='Variabel',
-            value_name='Nilai'
+        df_long = pd.concat(series_frames, ignore_index=True)
+
+        periode_order = (
+            df_long[['tahun_int', 'month_num', 'periode']]
+            .drop_duplicates()
+            .sort_values(['tahun_int', 'month_num'])['periode']
+            .tolist()
         )
 
-        df_melted['Variabel_Label'] = df_melted['Variabel'].str.replace('_', ' ').str.title()
-        if len(group_cols) > 3:
-            dim_col = group_cols[3]
-            df_melted['Seri'] = df_melted[dim_col].astype(str) + " - " + df_melted['Variabel_Label']
-        else:
-            df_melted['Seri'] = df_melted['Variabel_Label']
+        wilayah_label = "Seluruh Wilayah" if kabupaten == "SEMUA" else kabupaten
+        judul_variabel = ", ".join(v.replace('_', ' ').title() for v in variabel_list)
 
         fig = px.line(
-            df_melted, x='periode', y='Nilai', color='Seri',
-            title=f"Tren Transportasi di {provinsi} ({moda})",
+            df_long, x='periode', y='nilai', color='seri',
+            category_orders={'periode': periode_order},
+            title=f"Tren {judul_variabel} — {wilayah_label} ({moda})",
             markers=True, template='plotly_white'
         )
-        fig.update_layout(xaxis_title="Periode", yaxis_title="Jumlah / Volume")
+        fig.update_layout(xaxis_title="Periode", yaxis_title="Nilai", legend_title="Seri")
         st.plotly_chart(fig, use_container_width=True)
 
         with st.expander("📋 Lihat Data di Balik Grafik"):
-            st.dataframe(df_melted.drop(columns=['tahun_int', 'month_num']), use_container_width=True)
+            st.dataframe(
+                df_long.drop(columns=['tahun_int', 'month_num'])
+                       .rename(columns={'periode': 'Periode', 'seri': 'Seri', 'nilai': 'Nilai'}),
+                use_container_width=True
+            )
 
 
-def show_admin_page():
-    st.title("🔐 Admin Dashboard: Authenticated Access")
+def show_series_admin_page():
+    st.title("📈 Analisis Data Series")
+    st.caption(
+        "Jelajahi tren data transportasi antar periode secara bebas — tidak perlu login. "
+        "Pilih moda, kabupaten/kota, satu atau beberapa bandara/pelabuhan, dan satu atau beberapa "
+        "variabel untuk dibandingkan dalam satu grafik."
+    )
+    show_series_chart_section()
+
+    st.divider()
+    st.divider()
+
+    # ==========================================================================
+    # BAGIAN ADMIN (di bawah, khusus untuk pengelolaan & update data)
+    # ==========================================================================
+    st.title("🔐 Administrasi Data")
 
     # 1. Login System
     if 'admin_logged_in' not in st.session_state:
@@ -182,7 +231,7 @@ def show_admin_page():
     # 2. Database Maintenance Section
     with st.expander("⚠️ Zone Danger: Manage Database"):
         st.subheader("🗑️ Hapus Data Berdasarkan Filter")
-        st.caption("Pilih moda, provinsi, tahun, dan bulan dari data yang ingin dihapus.")
+        st.caption("Pilih moda, provinsi, tahun, dan bulan dari data yang ingin dihapus. Pilih \"SEMUA\" untuk tidak membatasi filter tersebut.")
 
         engine_del = get_engine()
 
@@ -226,14 +275,21 @@ def show_admin_page():
                 engine_del, params=params_del
             )
             jumlah_baris_del = int(count_result['n'].iloc[0])
-        except Exception:
+        except Exception as e:
+            st.error(f"Gagal membaca data: {e}")
             jumlah_baris_del = 0
 
         if jumlah_baris_del == 0:
             st.info("Tidak ada data yang cocok dengan filter di atas.")
         else:
-            st.warning(f"⚠️ **{jumlah_baris_del} baris data** pada tabel `{table_del}` cocok dengan filter di atas dan akan dihapus permanen.")
-            confirm_del = st.checkbox("Saya yakin ingin menghapus data ini secara permanen.", key="confirm_delete_filtered")
+            if not conditions:
+                st.error(f"🚨 Tidak ada filter aktif — **SEMUA {jumlah_baris_del} baris** pada tabel `{table_del}` akan terhapus!")
+            else:
+                st.warning(f"⚠️ **{jumlah_baris_del} baris data** pada tabel `{table_del}` cocok dengan filter di atas dan akan dihapus permanen.")
+
+            confirm_del = st.checkbox(
+                "Saya yakin ingin menghapus data ini secara permanen.", key="confirm_delete_filtered"
+            )
             if st.button("🗑️ Hapus Data Sesuai Filter", disabled=not confirm_del, key="btn_delete_filtered"):
                 try:
                     with engine_del.begin() as conn:
@@ -245,7 +301,8 @@ def show_admin_page():
                     st.error(f"Gagal menghapus data: {e}")
 
         st.divider()
-        with st.expander("🚨 Opsi Ekstrem: Hapus SELURUH Database"):
+        with st.expander("🚨 Opsi Ekstrem: Hapus SELURUH Database (Semua Tabel & Periode)"):
+            st.warning("Tindakan ini akan menghapus seluruh file database, termasuk semua moda dan semua periode!")
             if st.button("Reset/Delete Seluruh Database"):
                 if delete_db():
                     st.success("Database berhasil dihapus seluruhnya!")
@@ -262,7 +319,7 @@ def show_admin_page():
         with col_edit2:
             year_edit = st.text_input("Tahun (Contoh: 2026)", "2026")
         with col_edit3:
-            month_edit = st.selectbox("Bulan", MONTH_LIST, key="edit_month")
+            month_edit = st.selectbox("Bulan", ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"], key="edit_month")
 
         if st.button("Cari Data"):
             query = text(f"SELECT * FROM {table_edit} WHERE CAST(tahun AS TEXT) = :tahun AND bulan = :bulan")
@@ -290,6 +347,11 @@ def show_admin_page():
 
     # 4. Upload Section
     st.subheader("📥 Update Database (Upload Data)")
+    st.caption(
+        "Unggah satu atau beberapa file sekaligus. Sistem otomatis mendeteksi moda transportasi, "
+        "tahun, dan bulan dari isi file — Anda cukup memverifikasi sebelum diproses."
+    )
+
     uploaded_files = st.file_uploader(
         "Pilih satu atau beberapa file Excel BPS", type=['xls', 'xlsx'],
         accept_multiple_files=True, key="upload_files_multi"
@@ -314,14 +376,23 @@ def show_admin_page():
             st.session_state.pop('upload_preview', None)
 
         st.markdown("#### 1️⃣ Verifikasi Deteksi Otomatis")
+        st.caption("Periksa moda, tahun, dan bulan yang terdeteksi dari tiap file. Ubah tahun/bulan jika perlu.")
+
         for i, m in enumerate(st.session_state['upload_meta']):
             c1, c2, c3 = st.columns([3, 1, 1.3])
             with c1:
                 st.markdown(f"**📄 {m['nama_file']}**")
+                if m['table_type'] == 'transportasi_udara':
+                    st.caption("Moda terdeteksi: ✈️ **Transportasi Udara**")
+                elif m['table_type'] == 'transportasi_laut':
+                    st.caption("Moda terdeteksi: 🚢 **Transportasi Laut**")
+                else:
+                    st.error("Moda tidak terdeteksi — format header tidak dikenali, file ini akan dilewati.")
             with c2:
                 m['tahun'] = st.number_input("Tahun", min_value=2020, max_value=2035, value=int(m['tahun']), key=f"upload_tahun_{i}")
             with c3:
                 m['bulan'] = st.selectbox("Bulan", MONTH_LIST, index=MONTH_LIST.index(m['bulan']), key=f"upload_bulan_{i}")
+            st.divider()
 
         valid_meta = [m for m in st.session_state['upload_meta'] if m['table_type'] is not None]
 
@@ -348,30 +419,68 @@ def show_admin_page():
 
         if 'upload_preview' in st.session_state:
             preview = st.session_state['upload_preview']
+            st.markdown("#### 2️⃣ Pratinjau & Statistik Data")
+
             any_valid = False
             for p in preview:
-                if p['error']:
-                    continue
-                any_valid = True
-                s = p['stats']
-                mcol = st.columns(4)
-                mcol[0].metric("Jumlah Baris", f"{s['jumlah_baris']:,}")
-                mcol[1].metric("Total Penumpang", f"{s['total_penumpang']:,.0f} orang")
-                mcol[2].metric("Total Barang", f"{s['total_barang']:,.2f} {s['satuan_barang']}")
-                mcol[3].metric(f"Jumlah {s['label_lokasi']}", s['jumlah_lokasi'])
+                moda_label = ("✈️ Transportasi Udara" if p['table_type'] == 'transportasi_udara'
+                              else "🚢 Transportasi Laut" if p['table_type'] == 'transportasi_laut'
+                              else "⚠️ Gagal Diproses")
+                with st.expander(f"{moda_label} — {p['nama_file']} ({p['bulan']} {p['tahun']})", expanded=True):
+                    if p['error']:
+                        st.error(f"Gagal memproses file: {p['error']}")
+                        continue
+
+                    any_valid = True
+                    if p['existing_rows'] > 0:
+                        st.warning(
+                            f"⚠️ Sudah ada **{p['existing_rows']} baris data** untuk {p['bulan']} {p['tahun']} "
+                            f"pada tabel ini. Data lama akan **ditimpa** jika dilanjutkan."
+                        )
+                    else:
+                        st.info("✅ Periode ini belum ada di database (data baru).")
+
+                    s = p['stats']
+                    mcol = st.columns(4)
+                    mcol[0].metric("Jumlah Baris", f"{s['jumlah_baris']:,}")
+                    mcol[1].metric("Total Penumpang", f"{s['total_penumpang']:,.0f} orang")
+                    mcol[2].metric("Total Barang", f"{s['total_barang']:,.2f} {s['satuan_barang']}")
+                    mcol[3].metric(f"Jumlah {s['label_lokasi']}", s['jumlah_lokasi'])
+
+                    st.dataframe(p['df'], use_container_width=True, height=200)
 
             if any_valid:
-                overwrite = st.checkbox("Timpa data lama jika periode sama sudah ada", value=True, key="upload_overwrite")
-                confirm = st.checkbox("Saya yakin untuk menyimpan data ini ke database.", key="upload_confirm_checkbox")
+                st.markdown("#### 3️⃣ Konfirmasi")
+                overwrite = st.checkbox(
+                    "Timpa data lama jika periode yang sama sudah ada di database", value=True, key="upload_overwrite"
+                )
+                confirm = st.checkbox(
+                    "Saya sudah memeriksa statistik di atas dan yakin untuk menyimpan data ini ke database.",
+                    key="upload_confirm_checkbox"
+                )
 
                 if st.button("✅ Simpan ke Database", key="btn_save_upload", disabled=not confirm):
                     engine = get_engine()
+                    success_count = 0
                     for p in preview:
                         if p['error']:
                             continue
-                        with engine.begin() as conn:
-                            if overwrite:
-                                conn.execute(text(f"DELETE FROM {p['table_type']} WHERE CAST(tahun AS TEXT) = :tahun AND bulan = :bulan"), {"tahun": str(p['tahun']), "bulan": p['bulan']})
-                            p['df'].to_sql(p['table_type'], conn, if_exists='append', index=False)
-                    st.success("✅ Data berhasil disimpan!")
-                    st.balloons()
+                        try:
+                            with engine.begin() as conn:
+                                if overwrite:
+                                    conn.execute(
+                                        text(f"DELETE FROM {p['table_type']} WHERE CAST(tahun AS TEXT) = :tahun AND bulan = :bulan"),
+                                        {"tahun": str(p['tahun']), "bulan": p['bulan']}
+                                    )
+                                p['df'].to_sql(p['table_type'], conn, if_exists='append', index=False)
+                            st.success(f"✅ {p['nama_file']} berhasil disimpan ke `{p['table_type']}` ({p['bulan']} {p['tahun']}).")
+                            success_count += 1
+                        except Exception as e:
+                            st.error(f"Gagal menyimpan {p['nama_file']}: {e}")
+
+                    if success_count > 0:
+                        st.balloons()
+                        for k in ['upload_file_names', 'upload_meta', 'upload_preview']:
+                            st.session_state.pop(k, None)
+    else:
+        st.info("Unggah satu atau beberapa file Excel BPS untuk memulai proses update database.")
