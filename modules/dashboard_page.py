@@ -230,13 +230,18 @@ def ensure_dashboard_narasi_cache():
 
 
 def generate_section_narrative_ai(moda_nama, bln, thn, prev_bln, prev_thn,
-                                   penumpang_stats, barang_stats, satuan_barang,
-                                   model_name="gemini-2.5-flash"):
+                                   penumpang_stats, barang_stats, satuan_barang):
     api_keys = get_gemini_api_keys()
     if not api_keys:
         return None
 
-    # Inisialisasi index rolling di st.session_state jika belum ada
+    # Daftar model dengan versi yang lebih lama/stabil
+    candidate_models = [
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite"    
+        "gemini-3.1-flash-lite"
+    ]
+
     if "gemini_key_index" not in st.session_state:
         st.session_state["gemini_key_index"] = 0
 
@@ -248,58 +253,47 @@ def generate_section_narrative_ai(moda_nama, bln, thn, prev_bln, prev_thn,
     b_top_yoy, b_bot_yoy = _top_bottom(barang_stats['yoy_per_prov'])
 
     prompt = (
-        "Bertindaklah sebagai analis data senior di Badan Pusat Statistik (BPS) yang profesional namun komunikatif.\n"
-        f"Buatlah tepat 2 paragraf ringkasan naratif (Executive Summary) untuk perkembangan Transportasi {moda_nama} "
-        f"di Provinsi Papua, Papua Selatan, Papua Tengah, dan Papua Pegunungan pada periode {bln} {thn}.\n"
-        "Pisahkan paragraf pertama dan kedua dengan baris kosong ganda. Adaptasi gaya bahasa Berita Resmi "
-        "Statistik (BRS), namun buatlah kalimatnya lebih mengalir, natural, dan tidak kaku.\n\n"
-        "Variasikan pilihan kata (jangan monoton menggunakan frasa \"tercatat sebanyak\"). Anda bisa menggunakan kata "
-        "ganti seperti \"mencapai\", \"berada di angka\", \"menyentuh\", \"mengalami lonjakan\", atau \"terkoreksi\".\n\n"
-        "Struktur Narasi yang Wajib Diikuti:\n"
-        "1. Paragraf Pertama (Bulan ke Bulan / M-to-M):\n"
-        f"   - Bandingkan total penumpang (berangkat + datang) pada {bln} {thn} dengan {prev_bln} {prev_thn}: total saat ini "
-        f"{format_id_number(penumpang_stats['curr'], 0)} orang vs {format_id_number(penumpang_stats['prev'], 0)} orang "
-        f"({format_id_number(penumpang_stats['mtm'], 2) if penumpang_stats['mtm'] is not None else 'Undefined'} persen).\n"
-        f"   - Bandingkan juga total barang (muat + bongkar): saat ini {format_id_number(barang_stats['curr'], 2)} {satuan_barang} "
-        f"vs {format_id_number(barang_stats['prev'], 2)} {satuan_barang} "
-        f"({format_id_number(barang_stats['mtm'], 2) if barang_stats['mtm'] is not None else 'Undefined'} persen).\n"
-        f"   - Soroti provinsi dengan peningkatan tertinggi dan/atau penurunan terdalam untuk penumpang (naik: {p_top}, turun: {p_bot}) "
-        f"dan untuk barang (naik: {b_top}, turun: {b_bot}).\n\n"
-        f"2. Paragraf Kedua (Kumulatif Januari-{bln} / Year-on-Year):\n"
-        f"   - Bandingkan total kumulatif penumpang Januari-{bln} {thn} ({format_id_number(penumpang_stats['cum_curr'], 0)} orang) "
-        f"dengan periode sama tahun {thn - 1} ({format_id_number(penumpang_stats['cum_prev'], 0)} orang).\n"
-        f"   - Bandingkan total kumulatif barang Januari-{bln} {thn} ({format_id_number(barang_stats['cum_curr'], 2)} {satuan_barang}) "
-        f"dengan periode sama tahun {thn - 1} ({format_id_number(barang_stats['cum_prev'], 2)} {satuan_barang}).\n"
-        f"   - Sebutkan provinsi dengan lonjakan kumulatif tertinggi atau penurunan terdalam untuk penumpang "
-        f"(naik: {p_top_yoy}, turun: {p_bot_yoy}) dan barang (naik: {b_top_yoy}, turun: {b_bot_yoy}).\n\n"
-        "Aturan Tambahan:\n"
-        "- Langsung berikan output teks saja yang berisi 2 paragraf, tanpa kalimat pengantar/penutup.\n"
-        "- Format angka sesuai kaidah Bahasa Indonesia (titik untuk ribuan, koma untuk desimal)."
+        "Anda adalah Analis Kebijakan Utama dan Ahli Statistik Senior pada Direktorat Statistik Transportasi Badan Pusat Statistik (BPS).\n"
+        f"Susunlah sebuah Executive Summary resmi yang objektif, analitis, dan berwibawa tepat dalam 2 (dua) paragraf untuk publikasi kinerja Transportasi {moda_nama} "
+        f"di regional Papua (Provinsi Papua, Papua Selatan, Papua Tengah, dan Papua Pegunungan) periode {bln} {thn}.\n\n"
+        "Standar Penulisan & Kaidah Kebahasaan:\n"
+        "- Gunakan ragam bahasa resmi instansi pemerintah (bahasa baku, objektif, berorientasi data).\n"
+        "- Hindari pengulangan kata yang monoton; gunakan diksi analitis (contoh: \"membukukan volume\", \"terkoreksi tipis\", \"menunjukkan tren ekspansif\", \"menyumbang deviasi signifikan\").\n\n"
+        "Struktur & Substansi Wajib:\n"
+        "1. Paragraf Pertama (Analisis Bulanan / Month-to-Month):\n"
+        f"   - Evaluasi komparatif volume agregat penumpang (datang + berangkat) saat ini ({format_id_number(penumpang_stats['curr'], 0)} orang) terhadap baseline {prev_bln} {prev_thn} ({format_id_number(penumpang_stats['prev'], 0)} orang) yang merepresentasikan pertumbuhan {format_id_number(penumpang_stats['mtm'], 2) if penumpang_stats['mtm'] is not None else 'Undefined'}%.\n"
+        f"   - Analisis dinamika volume muat dan bongkar barang: realisasi {format_id_number(barang_stats['curr'], 2)} {satuan_barang} berbanding periode sebelumnya {format_id_number(barang_stats['prev'], 2)} {satuan_barang} dengan fluktuasi sebesar {format_id_number(barang_stats['mtm'], 2) if barang_stats['mtm'] is not None else 'Undefined'}%.\n"
+        f"   - Soroti wilayah pendorong utama (pertumbuhan tertinggi) serta wilayah yang mengalami kontraksi untuk indikator penumpang (tertinggi: {p_top}, terendah: {p_bot}) dan barang (tertinggi: {b_top}, terendah: {b_bot}).\n\n"
+        "2. Paragraf Kedua (Analisis Kumulatif / Year-to-Date & Year-on-Year):\n"
+        f"   - Bedah performa makro kumulatif Januari–{bln} {thn} untuk penumpang ({format_id_number(penumpang_stats['cum_curr'], 0)} orang) versus periode yang sama tahun lalu ({format_id_number(penumpang_stats['cum_prev'], 0)} orang).\n"
+        f"   - Bedah performa kumulatif arus barang ({format_id_number(barang_stats['cum_curr'], 2)} {satuan_barang} vs {format_id_number(barang_stats['cum_prev'], 2)} {satuan_barang}).\n"
+        f"   - Paparkan kontribusi wilayah dengan deviasi kumulatif paling mencolok (penumpang: {p_top_yoy} / {p_bot_yoy}; barang: {b_top_yoy} / {b_bot_yoy}).\n\n"
+        "Aturan Mutlak:\n"
+        "- Keluarkan HANYA teks dua paragraf tanpa pengantar, tanpa judul, dan tanpa penutup.\n"
+        "- Format angka mutlak menerapkan standar penulisan Indonesia (titik sebagai pemisah ribuan, koma sebagai desimal)."
     )
 
-    # Lakukan loop rolling berdasarkan index di session state
     for attempt in range(num_keys):
         current_idx = (st.session_state["gemini_key_index"] + attempt) % num_keys
         key = api_keys[current_idx]
         
-        try:
-            client = genai.Client(api_key=key.strip())
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=genai.types.GenerateContentConfig(temperature=0.3)
-            )
-            raw_text = getattr(response, "text", None)
-            if raw_text and str(raw_text).strip():
-                # Jika sukses, geser index key untuk pemanggilan berikutnya
-                st.session_state["gemini_key_index"] = (current_idx + 1) % num_keys
-                return str(raw_text).strip()
-        except Exception as e:
-            logger.warning("API Key ke-%d gagal: %s. Melakukan rolling ke key berikutnya...", current_idx + 1, e)
-            continue
+        for model_name in candidate_models:
+            try:
+                client = genai.Client(api_key=key.strip())
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=genai.types.GenerateContentConfig(temperature=0.3)
+                )
+                raw_text = getattr(response, "text", None)
+                if raw_text and str(raw_text).strip():
+                    st.session_state["gemini_key_index"] = (current_idx + 1) % num_keys
+                    return str(raw_text).strip()
+            except Exception as e:
+                logger.warning("Gagal dengan Key ke-%d menggunakan model versi lama %s: %s. Mencoba opsi lain...", current_idx + 1, model_name, e)
+                continue
             
-    return None
-                                       
+    return None                                       
 
 def generate_section_narrative_fallback(moda_nama, bln, thn, prev_bln, prev_thn,
                                          penumpang_stats, barang_stats, satuan_barang):
