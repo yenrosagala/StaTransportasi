@@ -293,6 +293,11 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
     if not api_keys:
         return None, "No API Key"
 
+    # Inisialisasi index rolling di st.session_state jika belum ada
+    if "gemini_key_index" not in st.session_state:
+        st.session_state["gemini_key_index"] = 0
+
+    num_keys = len(api_keys)
     data_str = df_flat.to_markdown(index=False)
     
     prompt = (
@@ -307,7 +312,11 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
         f"{data_str}"
     )
 
-    for key in api_keys:
+    # Lakukan loop sebanyak jumlah key yang ada dengan teknik rolling offset
+    for attempt in range(num_keys):
+        current_idx = (st.session_state["gemini_key_index"] + attempt) % num_keys
+        key = api_keys[current_idx]
+        
         try:
             client = genai.Client(api_key=key.strip())
             response = client.models.generate_content(
@@ -319,11 +328,16 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
             if raw_text and str(raw_text).strip():
                 text_clean = str(raw_text).strip()
                 cache[cache_key] = text_clean
+                
+                # Geser index ke key berikutnya untuk pemanggilan selanjutnya (Rolling Success)
+                st.session_state["gemini_key_index"] = (current_idx + 1) % num_keys
                 return text_clean, "Gemini AI"
-        except Exception:
+        except Exception as e:
+            logger.warning("API Key ke-%d gagal: %s. Melakukan rolling ke key berikutnya...", current_idx + 1, e)
             continue
             
     return None, "Failed"
+
 
 def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln, thn, prev_bln, prev_thn,
                                 col_prev, col_curr, col_cum_prev, col_cum_curr, prov=""):
