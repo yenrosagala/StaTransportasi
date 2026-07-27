@@ -269,10 +269,8 @@ def get_gemini_api_keys():
     return unique_keys
 
 def parse_two_paragraphs(text):
-    if not text or not str(text).strip(): 
-        return None, None
-    parts = [p.strip() for p in str(text).strip().split("\n\n") 
-    if p.strip()]
+    if not text or not str(text).strip(): return None, None
+    parts = [p.strip() for p in str(text).strip().split("\n\n") if p.strip()]
     if len(parts) >= 2: return parts[0], "\n\n".join(parts[1:])
     if len(parts) == 1: return parts[0], ""
     return None, None
@@ -334,30 +332,40 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
     return None, "Failed"
 
 
-def _get_top_entities(report_flat, col_prev, col_curr, col_cum_prev, col_cum_curr):
+def _get_extreme_entities(report_flat, col_prev, col_curr, col_cum_prev, col_cum_curr, metric_col):
+    """Cari entitas (kabupaten/bandara/pelabuhan) dengan nilai metric_col (M-to-M atau
+    Y-on-Y) TERTINGGI (top gainer) dan TERENDAH (top decliner), bukan sekadar 2 baris
+    pertama pada tabel. Baris 'TOTAL' dan entitas dengan pertumbuhan Undefined (pembagi 0)
+    diabaikan agar tidak menyesatkan narasi."""
     df = report_flat.drop(index="TOTAL", errors="ignore").copy()
-    if df.empty:
+    if df.empty or metric_col not in df.columns:
         return None, None
 
-    # Ambil 2 entitas pertama yang terdaftar di display table (sesuai hierarki BRS utama)
-    hasil = []
-    for idx, row in df.head(2).iterrows():
-        mtm = row.get("M-to-M (%)", np.nan)
-        yoy = row.get("Y-on-Y (%)", np.nan)
-        hasil.append({
+    valid = df[df[metric_col].notna()]
+    if valid.empty:
+        return None, None
+
+    def _to_dict(idx):
+        row = df.loc[idx]
+        return {
             "nama": str(idx),
             "curr": row.get(col_curr, 0),
             "prev": row.get(col_prev, 0),
             "cum_curr": row.get(col_cum_curr, 0),
             "cum_prev": row.get(col_cum_prev, 0),
-            "mtm": mtm,
-            "yoy": yoy
-        })
+            "mtm": row.get("M-to-M (%)", np.nan),
+            "yoy": row.get("Y-on-Y (%)", np.nan),
+        }
 
-    while len(hasil) < 2:
-        hasil.append({"nama": "", "curr": 0, "prev": 0, "cum_curr": 0, "cum_prev": 0, "mtm": np.nan, "yoy": np.nan})
+    top_idx = valid[metric_col].idxmax()
+    bottom_idx = valid[metric_col].idxmin()
 
-    return hasil[0], hasil[1]
+    top = _to_dict(top_idx)
+    # Kalau cuma ada 1 entitas dengan data valid (atau top & bottom kebetulan sama),
+    # jangan sebut entitas yang sama dua kali sebagai "naik tertinggi" & "turun terdalam".
+    bottom = _to_dict(bottom_idx) if bottom_idx != top_idx else None
+
+    return top, bottom
 
 
 def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln, thn, prev_bln, prev_thn,
@@ -369,7 +377,7 @@ def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln
     fmt_pct = lambda v: format_id_number(v, decimals=2)
 
     subject = meta['subject']
-    if meta['is_penumpang']: 
+    if meta['is_penumpang']:
         subject += f" angkutan {angkutan_kecil} domestik"
 
     total = report_flat.loc['TOTAL']
@@ -379,111 +387,106 @@ def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln
     abs_mtm = fmt_pct(abs(total_mtm) if pd.notna(total_mtm) else np.nan)
     abs_yoy = fmt_pct(abs(total_yoy) if pd.notna(total_yoy) else np.nan)
 
-    # Ambil 2 entitas utama sesuai hierarki BRS
-    e1, e2 = _get_top_entities(report_flat, col_prev, col_curr, col_cum_prev, col_cum_curr)
-    entitas1, entitas2 = e1["nama"], e2["nama"]
-    nilai1, nilai2 = e1["curr"], e2["curr"]
-    mtm1, mtm2 = e1["mtm"], e2["mtm"]
-    cum1, cum2 = e1["cum_curr"], e2["cum_curr"]
-    cum1_prev, cum2_prev = e1["cum_prev"], e2["cum_prev"]
-    yoy1, yoy2 = e1["yoy"], e2["yoy"]
+    # Cari entitas (kabupaten/bandara/pelabuhan) dengan kontribusi TERTINGGI & TERENDAH
+    # yang sesungguhnya (bukan sekadar 2 baris pertama tabel) -- dipisah per metrik,
+    # karena wilayah dengan M-to-M tertinggi belum tentu sama dengan Y-on-Y tertinggi.
+    region = region_label.lower()
+    mtm_top, mtm_bottom = _get_extreme_entities(report_flat, col_prev, col_curr, col_cum_prev, col_cum_curr, "M-to-M (%)")
+    yoy_top, yoy_bottom = _get_extreme_entities(report_flat, col_prev, col_curr, col_cum_prev, col_cum_curr, "Y-on-Y (%)")
 
     # --------------------------------------------------------------------------
-    # OPSI PARAGRAF 1 (Kinerja Bulanan / M-to-M) - Senada Gaya BRS
+    # Setiap paragraf dirakit dari TEPAT 3 kalimat: (1) kondisi total se-provinsi,
+    # (2) kontributor TERTINGGI, (3) kontributor TERENDAH. Tiap kalimat punya
+    # beberapa varian gaya bahasa yang dipilih acak, sehingga kombinasinya banyak
+    # tanpa mengorbankan struktur 3-kalimat yang diminta.
     # --------------------------------------------------------------------------
-    p1_options = [
-        # Opsi A: Gaya Standar BRS Lengkap Rincian Utama
-        (
-            f"Jumlah {subject.lower()} pada {bln} {thn} tercatat sebanyak {fmt(total_curr)} {meta['satuan']} atau "
-            f"{'naik' if total_mtm > 0 else 'turun'} sebesar {abs_mtm} persen dibanding {prev_bln} {prev_thn} "
-            f"yang sebanyak {fmt(total_prev)} {meta['satuan']}. Jika dirinci menurut {region_label.lower()}, "
-            f"jumlah {subject.lower()} di {entitas1} pada {bln} {thn} tercatat sebanyak {fmt(nilai1)} {meta['satuan']} atau "
-            f"{'naik' if mtm1 > 0 else 'turun'} sebesar {fmt_pct(abs(mtm1))} persen dan di {entitas2} tercatat sebanyak "
-            f"{fmt(nilai2)} {meta['satuan']} atau {'naik' if mtm2 > 0 else 'turun'} sebesar {fmt_pct(abs(mtm2))} persen."
-        ),
-        # Opsi B: Gaya Pembalikan Struktur Rinci
-        (
-            f"Pada {bln} {thn}, {subject.lower()} di Provinsi {prov} mencapai {fmt(total_curr)} {meta['satuan']}, "
-            f"mengalami {'peningkatan' if total_mtm > 0 else 'penurunan'} {abs_mtm} persen dibandingkan {prev_bln} {prev_thn}. "
-            f"Berdasarkan {region_label.lower()}, pencapaian tersebut didorong oleh {entitas1} yang mencatatkan "
-            f"{fmt(nilai1)} {meta['satuan']} ({'naik' if mtm1 > 0 else 'turun'} {fmt_pct(abs(mtm1))} persen) serta "
-            f"{entitas2} sebanyak {fmt(nilai2)} {meta['satuan']} ({'naik' if mtm2 > 0 else 'turun'} {fmt_pct(abs(mtm2))} persen)."
-        ),
-        # Opsi C: Gaya Deskriptif Analitis
-        (
-            f"Realisasi {subject.lower()} menggunakan angkutan {angkutan_kecil} di Provinsi {prov} selama {bln} {thn} "
-            f"membukukan angka {fmt(total_curr)} {meta['satuan']}, atau {'naik' if total_mtm > 0 else 'turun'} {abs_mtm} persen "
-            f"terhadap bulan {prev_bln} {prev_thn}. Apabila dirinci menurut wilayah utama, {entitas1} membukukan "
-            f"{fmt(nilai1)} {meta['satuan']} atau {'naik' if mtm1 > 0 else 'turun'} {fmt_pct(abs(mtm1))} persen, sementara "
-            f"{entitas2} menyusul dengan {fmt(nilai2)} {meta['satuan']} atau {'naik' if mtm2 > 0 else 'turun'} {fmt_pct(abs(mtm2))} persen."
-        ),
-        (
-        f"Pada bulan {bln} {thn}, {subject.lower()} tercatat sebanyak {fmt(total_curr)} {meta['satuan']}, atau "
-        f"mengalami {'kenaikan' if total_mtm > 0 else 'penurunan'} sebesar {abs_mtm} persen jika dibandingkan dengan "
-        f"{prev_bln} {prev_thn} yang mencapai {fmt(total_prev)} {meta['satuan']}. Secara rinci menurut {region_label.lower()}, "
-        f"{entitas1} membukukan {fmt(nilai1)} {meta['satuan']} ({'naik' if mtm1 > 0 else 'turun'} {fmt_pct(abs(mtm1))} persen) "
-        f"dan {entitas2} mencatatkan {fmt(nilai2)} {meta['satuan']} ({'naik' if mtm2 > 0 else 'turun'} {fmt_pct(abs(mtm2))} persen)."
-        ),
-        (
-            f"Realisasi agregat {subject.lower()} di Provinsi {prov} pada {bln} {thn} berada di angka "
-            f"{fmt(total_curr)} {meta['satuan']} ({'naik' if total_mtm > 0 else 'turun'} {abs_mtm} persen dibanding bulan {prev_bln} {prev_thn}). "
-            f"Kontribusi dominan terhadap capaian bulanan ini disumbangkan oleh {entitas1} sebesar {fmt(nilai1)} {meta['satuan']} "
-            f"({'naik' if mtm1 > 0 else 'turun'} {fmt_pct(abs(mtm1))} persen) serta {entitas2} sebesar {fmt(nilai2)} {meta['satuan']} "
-            f"({'naik' if mtm2 > 0 else 'turun'} {fmt_pct(abs(mtm2))} persen)."
-        )
-    ]
+    def _sentence_total_mtm():
+        naik = total_mtm > 0
+        options = [
+            f"{subject} pada {bln} {thn} tercatat sebanyak {fmt(total_curr)} {meta['satuan']}, "
+            f"{'naik' if naik else 'turun'} {abs_mtm} persen dibandingkan {prev_bln} {prev_thn} yang sebanyak {fmt(total_prev)} {meta['satuan']}.",
 
-    # --------------------------------------------------------------------------
-    # OPSI PARAGRAF 2 (Kinerja Kumulatif / Y-on-Y) - Senada Gaya BRS
-    # --------------------------------------------------------------------------
-    p2_options = [
-        # Opsi A: Gaya Standar BRS Kumulatif Lengkap
-        (
-            f"Secara kumulatif jumlah {subject.lower()} selama Januari–{bln} {thn} mencapai {fmt(total_cum_curr)} {meta['satuan']} "
-            f"atau {'naik' if total_yoy > 0 else 'turun'} sebesar {abs_yoy} persen bila dibandingkan dengan Januari–{bln} {int(thn)-1} "
-            f"yang sebanyak {fmt(total_cum_prev)} {meta['satuan']}. Jika dirinci menurut {region_label.lower()}, "
-            f"jumlah {subject.lower()} di {entitas1} {'naik' if yoy1 > 0 else 'turun'} sebesar {fmt_pct(abs(yoy1))} persen dari "
-            f"{fmt(cum1_prev)} {meta['satuan']} pada Januari–{bln} {int(thn)-1} menjadi {fmt(cum1)} {meta['satuan']} pada Januari–{bln} {thn}. "
-            f"Sejalan dengan itu, jumlah di {entitas2} {'naik' if yoy2 > 0 else 'turun'} sebesar {fmt_pct(abs(yoy2))} persen dari "
-            f"{fmt(cum2_prev)} {meta['satuan']} menjadi {fmt(cum2)} {meta['satuan']}."
-        ),
-        # Opsi B: Gaya Ringkas Spasial
-        (
-            f"Akumulasi {subject.lower()} dari Januari hingga {bln} {thn} tercatat sebanyak {fmt(total_cum_curr)} {meta['satuan']}, "
-            f"atau {'naik' if total_yoy > 0 else 'turun'} {abs_yoy} persen dibandingkan periode yang sama tahun sebelumnya. "
-            f"Perkembangan ini antara lain dipengaruhi oleh kinerja {entitas1} yang mencatatkan {fmt(cum1)} {meta['satuan']} "
-            f"({'naik' if yoy1 > 0 else 'turun'} {fmt_pct(abs(yoy1))} persen dari {fmt(cum1_prev)} {meta['satuan']}) dan "
-            f"{entitas2} sebesar {fmt(cum2)} {meta['satuan']} ({'naik' if yoy2 > 0 else 'turun'} {fmt_pct(abs(yoy2))} persen dari {fmt(cum2_prev)} {meta['satuan']})."
-        ),
-        # Opsi C: Gaya Perbandingan Langsung
-        (
-            f"Selama periode Januari–{bln} {thn}, total kumulatif {subject.lower()} di Provinsi {prov} menyentuh {fmt(total_cum_curr)} {meta['satuan']}, "
-            f"mengalami {'pertumbuhan' if total_yoy > 0 else 'koreksi'} sebesar {abs_yoy} persen terhadap Januari–{bln} {int(thn)-1}. "
-            f"Berdasarkan sebaran wilayah, {entitas1} mengalami perubahan sebesar {fmt_pct(abs(yoy1))} persen menjadi {fmt(cum1)} {meta['satuan']}, "
-            f"sedangkan {entitas2} berubah sebesar {fmt_pct(abs(yoy2))} persen menjadi {fmt(cum2)} {meta['satuan']}."
-        ),
-        (
-        f"Perkembangan kumulatif {subject.lower()} dari Januari hingga {bln} {thn} mencatatkan total "
-        f"{fmt(total_cum_curr)} {meta['satuan']}, atau {'naik' if total_yoy > 0 else 'turun'} sebesar {abs_yoy} persen "
-        f"terhadap periode Januari–{bln} {int(thn)-1} yang sebesar {fmt(total_cum_prev)} {meta['satuan']}. "
-        f"Berdasarkan sebaran wilayah, {entitas1} mengalami {'kenaikan' if yoy1 > 0 else 'penurunan'} {fmt_pct(abs(yoy1))} persen "
-        f"menjadi {fmt(cum1)} {meta['satuan']} dari {fmt(cum1_prev)} {meta['satuan']}, sementara {entitas2} "
-        f"{'naik' if yoy2 > 0 else 'turun'} {fmt_pct(abs(yoy2))} persen menjadi {fmt(cum2)} {meta['satuan']} dari {fmt(cum2_prev)} {meta['satuan']}."
-        ),
-        (
-        f"Selama rentang waktu Januari–{bln} {thn}, volume {subject.lower()} secara kumulatif mencapai "
-        f"{fmt(total_cum_curr)} {meta['satuan']}, yang menunjukkan {'pertumbuhan' if total_yoy > 0 else 'koreksi'} {abs_yoy} persen "
-        f"dibanding Januari–{bln} tahun sebelumnya. Di tingkat wilayah, pergerakan ini dicerminkan oleh {entitas1} yang membukukan "
-        f"{fmt(cum1)} {meta['satuan']} ({'naik' if yoy1 > 0 else 'turun'} {fmt_pct(abs(yoy1))} persen) dan {entitas2} yang mencatat "
-        f"{fmt(cum2)} {meta['satuan']} ({'naik' if yoy2 > 0 else 'turun'} {fmt_pct(abs(yoy2))} persen)."
-        )
-    ]
+            f"Secara keseluruhan, {subject.lower()} di Provinsi {prov} pada {bln} {thn} "
+            f"{'tumbuh' if naik else 'terkontraksi'} {abs_mtm} persen menjadi {fmt(total_curr)} {meta['satuan']}, "
+            f"dari sebelumnya {fmt(total_prev)} {meta['satuan']} pada {prev_bln} {prev_thn}.",
 
-    para1 = random.choice(p1_options)
-    para2 = random.choice(p2_options)
-    
+            f"Dibandingkan {prev_bln} {prev_thn}, {subject.lower()} se-Provinsi {prov} pada {bln} {thn} "
+            f"{'bertambah' if naik else 'berkurang'} {abs_mtm} persen menjadi {fmt(total_curr)} {meta['satuan']}.",
+
+            f"Kinerja {subject.lower()} tingkat provinsi pada {bln} {thn} "
+            f"{'mengalami peningkatan' if naik else 'mengalami penurunan'} sebesar {abs_mtm} persen, "
+            f"dari {fmt(total_prev)} {meta['satuan']} pada {prev_bln} {prev_thn} menjadi {fmt(total_curr)} {meta['satuan']}.",
+        ]
+        return random.choice(options)
+
+    def _sentence_top(entity, value, value_field, region_word):
+        if entity is None or pd.isna(value):
+            return ""
+        naik = value > 0
+        options = [
+            f"Kontributor tertinggi berasal dari {region_word} {entity['nama']}, yang "
+            f"{'tumbuh' if naik else 'menyusut paling ringan'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
+
+            f"{region_word.capitalize()} {entity['nama']} tercatat sebagai penyumbang kinerja terbaik, dengan "
+            f"{'kenaikan' if naik else 'penurunan paling ringan'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
+
+            f"Peningkatan paling signifikan terjadi di {region_word} {entity['nama']}, yang mencapai {fmt(entity[value_field])} {meta['satuan']} "
+            f"atau {'naik' if naik else 'turun'} {fmt_pct(abs(value))} persen.",
+
+            f"Dari sisi kontribusi, {region_word} {entity['nama']} tampil paling menonjol dengan "
+            f"{'pertumbuhan' if naik else 'penurunan paling minim'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
+        ]
+        return random.choice(options)
+
+    def _sentence_bottom(entity, value, value_field, region_word):
+        if entity is None or pd.isna(value):
+            return ""
+        turun = value < 0
+        options = [
+            f"Sebaliknya, {region_word} {entity['nama']} menjadi kontributor terendah setelah "
+            f"{'terkoreksi' if turun else 'tumbuh paling lambat'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
+
+            f"Di sisi lain, kinerja {region_word} {entity['nama']} paling lemah, "
+            f"{'turun' if turun else 'hanya tumbuh'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
+
+            f"Penurunan terdalam tercatat di {region_word} {entity['nama']}, "
+            f"{'turun' if turun else 'tumbuh tipis'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
+
+            f"Sementara itu, {region_word} {entity['nama']} menjadi wilayah dengan capaian paling rendah, "
+            f"{'terkontraksi' if turun else 'nyaris stagnan dengan pertumbuhan'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
+        ]
+        return random.choice(options)
+
+    def _sentence_total_yoy():
+        naik = total_yoy > 0
+        options = [
+            f"Secara kumulatif, {subject.lower()} selama Januari–{bln} {thn} mencapai {fmt(total_cum_curr)} {meta['satuan']}, "
+            f"{'naik' if naik else 'turun'} {abs_yoy} persen dibandingkan Januari–{bln} {int(thn)-1} yang sebanyak {fmt(total_cum_prev)} {meta['satuan']}.",
+
+            f"Akumulasi {subject.lower()} Provinsi {prov} dari Januari hingga {bln} {thn} tercatat sebanyak {fmt(total_cum_curr)} {meta['satuan']}, "
+            f"atau {'naik' if naik else 'turun'} {abs_yoy} persen dibandingkan periode yang sama tahun sebelumnya.",
+
+            f"Dibandingkan Januari–{bln} {int(thn)-1}, capaian kumulatif {subject.lower()} pada Januari–{bln} {thn} "
+            f"{'bertumbuh' if naik else 'menyusut'} {abs_yoy} persen menjadi {fmt(total_cum_curr)} {meta['satuan']}.",
+
+            f"Kinerja kumulatif {subject.lower()} se-Provinsi {prov} sejak awal tahun hingga {bln} {thn} "
+            f"{'tumbuh' if naik else 'terkoreksi'} sebesar {abs_yoy} persen, dari {fmt(total_cum_prev)} {meta['satuan']} menjadi {fmt(total_cum_curr)} {meta['satuan']}.",
+        ]
+        return random.choice(options)
+
+    p1_total = _sentence_total_mtm()
+    p1_top = _sentence_top(mtm_top, mtm_top['mtm'] if mtm_top else np.nan, 'curr', region)
+    p1_bottom = _sentence_bottom(mtm_bottom, mtm_bottom['mtm'] if mtm_bottom else np.nan, 'curr', region)
+    para1 = " ".join(s for s in [p1_total, p1_top, p1_bottom] if s)
+
+    p2_total = _sentence_total_yoy()
+    p2_top = _sentence_top(yoy_top, yoy_top['yoy'] if yoy_top else np.nan, 'cum_curr', region)
+    p2_bottom = _sentence_bottom(yoy_bottom, yoy_bottom['yoy'] if yoy_bottom else np.nan, 'cum_curr', region)
+    para2 = " ".join(s for s in [p2_total, p2_top, p2_bottom] if s)
+
     return para1, para2
-                                   
+
+
 def create_complete_master_word_report(prov, thn, bln, all_report_data):
     doc = docx.Document()
     doc.add_heading(f"Laporan Komprehensif Perkembangan Transportasi Provinsi {prov} - {bln} {thn}", level=1)
