@@ -230,6 +230,12 @@ NARRATIVE_META = {
     'dn_muat_barang_ton':   {'subject': 'Volume barang yang dimuat', 'satuan': 'ton', 'is_penumpang': False},
 }
 
+def _arah_dinamis(pct):
+    if pd.isna(pct): return "tercatat"
+    if pct > 0: return random.choice(["mengalami lonjakan", "naik", "meningkat", "mengalami pertumbuhan"])
+    elif pct < 0: return random.choice(["terkoreksi", "turun", "mengalami penurunan", "menyusut"])
+    return "stabil"
+
 def ensure_narasi_cache():
     if "narasi_cache" not in st.session_state:
         st.session_state["narasi_cache"] = {}
@@ -287,12 +293,14 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
     if not api_keys:
         return None, "No API Key"
 
+    # DAFTAR MODEL ROLLING SESUAI PERMINTAAN
     candidate_models = [
-        "gemini-1.5-flash",
         "gemini-2.5-flash",
-        "gemini-2.5-lite",
-        "gemini-1.5-pro",
-        "gemini-pro"
+        "gemini-2.6-flash-lite",
+        "gemini-3-flash",
+        "gemini-3.1-flash-lite",
+        "gemini-3.5-flash",
+        "gemini-3.5-flash-lite"
     ]
 
     if "gemini_key_index" not in st.session_state:
@@ -319,9 +327,8 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
         
         for model_name in candidate_models:
             try:
-                # PERBAIKAN: Masukkan api_key secara eksplisit ke dalam genai.Client agar tidak terjadi error 401
+                # Mengirimkan api_key secara eksplisit untuk mencegah error 401 UNAUTHENTICATED
                 client = genai.Client(api_key=key.strip())
-                
                 response = client.models.generate_content(
                     model=model_name,
                     contents=prompt,
@@ -332,47 +339,12 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
                     text_clean = str(raw_text).strip()
                     cache[cache_key] = text_clean
                     st.session_state["gemini_key_index"] = (current_idx + 1) % num_keys
-                    return text_clean, "Gemini AI"
+                    return text_clean, f"Gemini AI ({model_name})"
             except Exception as e:
-                logger.warning("Gagal pada Report dengan Key ke-%d menggunakan model %s: %s. Mencoba opsi lain...", current_idx + 1, model_name, e)
+                logger.warning("Gagal pada Report dengan Key ke-%d menggunakan model %s: %s. Mencoba opsi model/key lain...", current_idx + 1, model_name, e)
                 continue
             
     return None, "Failed"
-
-def _get_extreme_entities(report_flat, col_prev, col_curr, col_cum_prev, col_cum_curr, metric_col):
-    """Cari entitas (kabupaten/bandara/pelabuhan) dengan nilai metric_col (M-to-M atau
-    Y-on-Y) TERTINGGI (top gainer) dan TERENDAH (top decliner), bukan sekadar 2 baris
-    pertama pada tabel. Baris 'TOTAL' dan entitas dengan pertumbuhan Undefined (pembagi 0)
-    diabaikan agar tidak menyesatkan narasi."""
-    df = report_flat.drop(index="TOTAL", errors="ignore").copy()
-    if df.empty or metric_col not in df.columns:
-        return None, None
-
-    valid = df[df[metric_col].notna()]
-    if valid.empty:
-        return None, None
-
-    def _to_dict(idx):
-        row = df.loc[idx]
-        return {
-            "nama": str(idx),
-            "curr": row.get(col_curr, 0),
-            "prev": row.get(col_prev, 0),
-            "cum_curr": row.get(col_cum_curr, 0),
-            "cum_prev": row.get(col_cum_prev, 0),
-            "mtm": row.get("M-to-M (%)", np.nan),
-            "yoy": row.get("Y-on-Y (%)", np.nan),
-        }
-
-    top_idx = valid[metric_col].idxmax()
-    bottom_idx = valid[metric_col].idxmin()
-
-    top = _to_dict(top_idx)
-    # Kalau cuma ada 1 entitas dengan data valid (atau top & bottom kebetulan sama),
-    # jangan sebut entitas yang sama dua kali sebagai "naik tertinggi" & "turun terdalam".
-    bottom = _to_dict(bottom_idx) if bottom_idx != top_idx else None
-
-    return top, bottom
 
 
 def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln, thn, prev_bln, prev_thn,
@@ -384,7 +356,7 @@ def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln
     fmt_pct = lambda v: format_id_number(v, decimals=2)
 
     subject = meta['subject']
-    if meta['is_penumpang']:
+    if meta['is_penumpang']: 
         subject += f" angkutan {angkutan_kecil} domestik"
 
     total = report_flat.loc['TOTAL']
@@ -394,111 +366,79 @@ def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln
     abs_mtm = fmt_pct(abs(total_mtm) if pd.notna(total_mtm) else np.nan)
     abs_yoy = fmt_pct(abs(total_yoy) if pd.notna(total_yoy) else np.nan)
 
-    # Cari entitas (kabupaten/bandara/pelabuhan) dengan kontribusi TERTINGGI & TERENDAH
-    # yang sesungguhnya (bukan sekadar 2 baris pertama tabel) -- dipisah per metrik,
-    # karena wilayah dengan M-to-M tertinggi belum tentu sama dengan Y-on-Y tertinggi.
-    region = region_label.lower()
-    mtm_top, mtm_bottom = _get_extreme_entities(report_flat, col_prev, col_curr, col_cum_prev, col_cum_curr, "M-to-M (%)")
-    yoy_top, yoy_bottom = _get_extreme_entities(report_flat, col_prev, col_curr, col_cum_prev, col_cum_curr, "Y-on-Y (%)")
+    p1_options = [
+        (
+            f"Berdasarkan hasil pencatatan data makro sektoral, {subject.lower()} di Provinsi {prov} pada periode {bln} {thn} "
+            f"membukukan realisasi agregat sebesar {fmt(total_curr)} {meta['satuan']}. "
+            f"Kinerja bulanan tersebut menunjukkan pergerakan yang {_arah_dinamis(total_mtm)} dengan tingkat fluktuasi "
+            f"sebesar {abs_mtm} persen apabila dikomparasikan terhadap baseline operasional bulan {prev_bln} {prev_thn} "
+            f"yang berada di angka {fmt(total_prev)} {meta['satuan']}."
+        ),
+        (
+            f"Dinamika sektor transportasi mencatat bahwa {subject.lower()} di wilayah Provinsi {prov} "
+            f"mencapai volume total {fmt(total_curr)} {meta['satuan']} selama bulan {bln} {thn}. "
+            f"Realisasi ini {_arah_dinamis(total_mtm)} sebesar {abs_mtm} persen secara month-to-month (M-to-M) "
+            f"dibandingkan kondisi bulan {prev_bln} {prev_thn} yang mencatatkan angka {fmt(total_prev)} {meta['satuan']}."
+        ),
+        (
+            f"Pada periode {bln} {thn}, aggregate volume {subject.lower()} untuk Provinsi {prov} "
+            f"berada pada level {fmt(total_curr)} {meta['satuan']}. "
+            f"Perkembangan indikator ini mengindikasikan adanya pergerakan yang {_arah_dinamis(total_mtm)} "
+            f"dengan deviasi sebesar {abs_mtm} persen dari performa bulan sebelumnya ({prev_bln} {prev_thn})."
+        ),
+        (
+            f"Meninjau kinerja operasional bulanan, volume {subject.lower()} di Provinsi {prov} pada {bln} {thn} "
+            f"tercatat sebesar {fmt(total_curr)} {meta['satuan']}. Capaian tersebut memperlihatkan tren yang {_arah_dinamis(total_mtm)} "
+            f"sebesar {abs_mtm} persen jika disandingkan dengan posisi bulan {prev_bln} {prev_thn} "
+            f"yang sebelumnya membukukan {fmt(total_prev)} {meta['satuan']}."
+        ),
+        (
+            f"Perkembangan arus {subject.lower()} di Provinsi {prov} pada bulan {bln} {thn} "
+            f"menunjukkan angka total mencapai {fmt(total_curr)} {meta['satuan']}. "
+            f"Secara bulanan, parameter ini {_arah_dinamis(total_mtm)} dengan persentase perubahan di kisaran {abs_mtm} persen "
+            f"terhadap catatan volume pada periode pembanding bulan {prev_bln} {prev_thn}."
+        )
+    ]
 
-    # --------------------------------------------------------------------------
-    # Setiap paragraf dirakit dari TEPAT 3 kalimat: (1) kondisi total se-provinsi,
-    # (2) kontributor TERTINGGI, (3) kontributor TERENDAH. Tiap kalimat punya
-    # beberapa varian gaya bahasa yang dipilih acak, sehingga kombinasinya banyak
-    # tanpa mengorbankan struktur 3-kalimat yang diminta.
-    # --------------------------------------------------------------------------
-    def _sentence_total_mtm():
-        naik = total_mtm > 0
-        options = [
-            f"Denyut {subject.lower()} di Provinsi {prov} {'menggeliat' if naik else 'melemah'} pada {bln} {thn}, "
-            f"dengan angka mencapai {fmt(total_curr)} {meta['satuan']} atau {'melonjak' if naik else 'anjlok'} {abs_mtm} persen "
-            f"dibandingkan {prev_bln} {prev_thn} yang sebanyak {fmt(total_prev)} {meta['satuan']}.",
+    p2_options = [
+        (
+            f"Secara kumulatif (Year-to-Date hingga {bln} {thn}), akumulasi realisasi {subject.lower()} "
+            f"telah menyentuh angka {fmt(total_cum_curr)} {meta['satuan']}. "
+            f"Capaian ini mencatatkan tren pertumbuhan yang {_arah_dinamis(total_yoy)} sebesar {abs_yoy} persen "
+            f"secara Year-on-Year (Y-on-Y) jika dibandingkan dengan akumulasi periode yang sama pada tahun sebelumnya "
+            f"({fmt(total_cum_prev)} {meta['satuan']}), merefleksikan stabilitas aktivitas ekonomi regional."
+        ),
+        (
+            f"Meninjau kinerja tahun berjalan hingga bulan {bln} {thn}, total realisasi kumulatif tercatat sebesar {fmt(total_cum_curr)} "
+            f"{meta['satuan']}. Dibandingkan dengan capaian kumulatif Januari–{bln} tahun sebelumnya ({fmt(total_cum_prev)} {meta['satuan']}), "
+            f"indikator ini {_arah_dinamis(total_yoy)} di level {abs_yoy} persen secara Y-on-Y, yang menggambarkan daya tahan "
+            f"serta dinamika pemulihan konektivitas wilayah."
+        ),
+        (
+            f"Ditinjau dari perspektif kumulatif tahunan (Januari–{bln} {thn}), volume agregat {subject.lower()} "
+            f"mencapai {fmt(total_cum_curr)} {meta['satuan']}. Performa ini menunjukkan kurva laju yang {_arah_dinamis(total_yoy)} "
+            f"sebesar {abs_yoy} persen Y-on-Y terhadap baseline operasional tahun sebelumnya, memberi gambaran optimisme "
+            f"bagi keberlanjutan moda transportasi di Provinsi {prov}."
+        ),
+        (
+            f"Lebih lanjut, analisis secara kumulatif dari Januari hingga {bln} {thn} menunjukkan total volume penyerapan "
+            f"sebesar {fmt(total_cum_curr)} {meta['satuan']}. Angka tersebut mencerminkan dinamika yang {_arah_dinamis(total_yoy)} "
+            f"sebesar {abs_yoy} persen secara tahunan (Y-on-Y) apabila dikontraskan dengan capaian periode yang sama tahun lalu "
+            f"sebesar {fmt(total_cum_prev)} {meta['satuan']}."
+        ),
+        (
+            f"Dalam rentang waktu tahun berjalan (Year-to-Date) sampai dengan {bln} {thn}, akumulasi arus {subject.lower()} "
+            f"terakumulasi pada angka {fmt(total_cum_curr)} {meta['satuan']}. Kinerja makro ini {_arah_dinamis(total_yoy)} "
+            f"di level {abs_yoy} persen secara Year-on-Year, menandakan adanya penyesuaian struktural dan pola mobilitas baru "
+            f"di kawasan regional."
+        )
+    ]
 
-            f"{subject} di Provinsi {prov} pada {bln} {thn} {'melesat' if naik else 'tertekan'} {abs_mtm} persen menjadi "
-            f"{fmt(total_curr)} {meta['satuan']}, dari sebelumnya {fmt(total_prev)} {meta['satuan']} pada {prev_bln} {prev_thn}.",
-
-            f"Data terbaru menunjukkan {subject.lower()} se-Provinsi {prov} pada {bln} {thn} "
-            f"{'naik tajam' if naik else 'turun tajam'} sebesar {abs_mtm} persen dibandingkan sebulan sebelumnya, "
-            f"dari {fmt(total_prev)} {meta['satuan']} menjadi {fmt(total_curr)} {meta['satuan']}.",
-
-            f"Sinyal {'positif' if naik else 'perlambatan'} terlihat dari {subject.lower()} Provinsi {prov} pada {bln} {thn}, "
-            f"yang {'bertumbuh' if naik else 'terkoreksi'} {abs_mtm} persen dari {fmt(total_prev)} {meta['satuan']} pada {prev_bln} {prev_thn} "
-            f"menjadi {fmt(total_curr)} {meta['satuan']}.",
-        ]
-        return random.choice(options)
-
-    def _sentence_top(entity, value, value_field, region_word):
-        if entity is None or pd.isna(value):
-            return ""
-        naik = value > 0
-        options = [
-            f"{region_word.capitalize()} {entity['nama']} mencuri perhatian dengan "
-            f"{'lonjakan' if naik else 'penurunan paling ringan'} {fmt_pct(abs(value))} persen, mengantarkan angkanya ke "
-            f"{fmt(entity[value_field])} {meta['satuan']}.",
-
-            f"Performa paling menonjol datang dari {region_word} {entity['nama']}, yang "
-            f"{'melesat' if naik else 'nyaris tak tergoyahkan'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
-
-            f"{region_word.capitalize()} {entity['nama']} tampil sebagai bintang utama periode ini, dengan "
-            f"{'kenaikan' if naik else 'penurunan tertahan'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
-
-            f"Lonjakan paling tajam dicatatkan {region_word} {entity['nama']}, yang {'melonjak' if naik else 'hanya melemah tipis'} "
-            f"{fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
-        ]
-        return random.choice(options)
-
-    def _sentence_bottom(entity, value, value_field, region_word):
-        if entity is None or pd.isna(value):
-            return ""
-        turun = value < 0
-        options = [
-            f"Namun, cerita berbeda ditunjukkan {region_word} {entity['nama']}, yang "
-            f"{'anjlok' if turun else 'tumbuh paling lambat'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
-
-            f"Di sisi lain, {region_word} {entity['nama']} tampil kontras dengan "
-            f"{'penurunan tajam' if turun else 'pertumbuhan paling minim'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
-
-            f"Kondisi berlawanan terjadi di {region_word} {entity['nama']}, yang "
-            f"{'melemah' if turun else 'nyaris stagnan'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
-
-            f"Sementara itu, {region_word} {entity['nama']} mencatatkan performa paling lemah, "
-            f"{'terperosok' if turun else 'hanya merangkak naik'} {fmt_pct(abs(value))} persen menjadi {fmt(entity[value_field])} {meta['satuan']}.",
-        ]
-        return random.choice(options)
-
-    def _sentence_total_yoy():
-        naik = total_yoy > 0
-        options = [
-            f"Secara kumulatif, {subject.lower()} selama Januari–{bln} {thn} {'melesat' if naik else 'merosot'} ke angka "
-            f"{fmt(total_cum_curr)} {meta['satuan']}, {'naik' if naik else 'turun'} {abs_yoy} persen dibandingkan Januari–{bln} {int(thn)-1} "
-            f"yang sebanyak {fmt(total_cum_prev)} {meta['satuan']}.",
-
-            f"Tren sepanjang tahun berjalan menunjukkan {subject.lower()} Provinsi {prov} dari Januari hingga {bln} {thn} "
-            f"{'terus menanjak' if naik else 'terus melambat'} menjadi {fmt(total_cum_curr)} {meta['satuan']}, "
-            f"atau {'naik' if naik else 'turun'} {abs_yoy} persen dibandingkan periode yang sama tahun sebelumnya.",
-
-            f"Dibandingkan Januari–{bln} {int(thn)-1}, capaian kumulatif {subject.lower()} pada Januari–{bln} {thn} "
-            f"{'melonjak' if naik else 'menyusut'} {abs_yoy} persen menjadi {fmt(total_cum_curr)} {meta['satuan']}.",
-
-            f"Akumulasi {subject.lower()} se-Provinsi {prov} sejak awal tahun hingga {bln} {thn} "
-            f"{'terus bergerak positif' if naik else 'terus tertekan'}, {'tumbuh' if naik else 'terkoreksi'} {abs_yoy} persen dari "
-            f"{fmt(total_cum_prev)} {meta['satuan']} menjadi {fmt(total_cum_curr)} {meta['satuan']}.",
-        ]
-        return random.choice(options)
-
-    p1_total = _sentence_total_mtm()
-    p1_top = _sentence_top(mtm_top, mtm_top['mtm'] if mtm_top else np.nan, 'curr', region)
-    p1_bottom = _sentence_bottom(mtm_bottom, mtm_bottom['mtm'] if mtm_bottom else np.nan, 'curr', region)
-    para1 = " ".join(s for s in [p1_total, p1_top, p1_bottom] if s)
-
-    p2_total = _sentence_total_yoy()
-    p2_top = _sentence_top(yoy_top, yoy_top['yoy'] if yoy_top else np.nan, 'cum_curr', region)
-    p2_bottom = _sentence_bottom(yoy_bottom, yoy_bottom['yoy'] if yoy_bottom else np.nan, 'cum_curr', region)
-    para2 = " ".join(s for s in [p2_total, p2_top, p2_bottom] if s)
-
+    para1 = random.choice(p1_options)
+    para2 = random.choice(p2_options)
+    
     return para1, para2
-
-
+                                   
 def create_complete_master_word_report(prov, thn, bln, all_report_data):
     doc = docx.Document()
     doc.add_heading(f"Laporan Komprehensif Perkembangan Transportasi Provinsi {prov} - {bln} {thn}", level=1)
@@ -705,7 +645,7 @@ def render_tables_and_narratives(all_collected_data):
 
         h1, h2 = st.columns([5, 1])
         with h1:
-            st.markdown(f"**📰 Laporan Naratif — {item['label']}**")
+            st.markdown(f"**📝 Executive Summary — {item['label']}**")
         with h2:
             if st.button("🔄 Regenerasi", key=f"regen_report_{item['table_no']}", width='stretch'):
                 ensure_narasi_cache()
@@ -714,7 +654,7 @@ def render_tables_and_narratives(all_collected_data):
                 st.session_state["narasi_cache"].pop(cache_key + "|fallback", None)
                 st.rerun()
 
-        with st.spinner(f"Menyusun laporan naratif untuk {item['label']}..."):
+        with st.spinner(f"Menyusun Executive Summary untuk {item['label']}..."):
             text_final, source = generate_single_narrative_ai(
                 item['report_display_brs'].reset_index(), 
                 item['label'], 
@@ -728,7 +668,7 @@ def render_tables_and_narratives(all_collected_data):
 
         if text_final:
             p1, p2 = parse_two_paragraphs(text_final)
-            p1_text = f"*(Laporan Naratif - Gemini AI)*\n\n{p1}" if p1 else ""
+            p1_text = f"*(Executive Summary - Gemini AI [{source}])*\n\n{p1}" if p1 else ""
             p2_text = p2 if p2 else ""
         else:
             ensure_narasi_cache()
@@ -752,7 +692,7 @@ def render_tables_and_narratives(all_collected_data):
                     col_cum_curr=item['col_cum_curr'],
                     prov=item['prov']
                 )
-                p1_text = f"*(Laporan Naratif - Sistem Fallback)*\n\n{p1}"
+                p1_text = f"*(Executive Summary - Sistem Fallback)*\n\n{p1}"
                 p2_text = p2
                 cache[fallback_cache_key] = (p1_text, p2_text)
 
@@ -774,7 +714,7 @@ def show_report_page():
 
     if st.button("Generate Semua Laporan (Udara & Laut)"):
         all_collected_data = []
-        global_table_counter = 1
+        global_table_counter = 1  
         
         moda_udara = "Transportasi Udara"
         df_cu, df_pr, df_cc, df_cp, p_bln, p_thn = get_comparison_data(prov, thn, bln, moda_udara)
