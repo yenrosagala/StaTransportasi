@@ -112,6 +112,7 @@ def build_brs_display_table(report_flat, prov, moda):
     df = df.reset_index()
     row_col = df.columns[0]
     
+    # Normalisasi nama entitas
     df[row_col] = df[row_col].apply(lambda x: normalisasi_entitas(x, moda))
     df = df.groupby(row_col).sum(min_count=1).reset_index() 
     
@@ -121,33 +122,48 @@ def build_brs_display_table(report_flat, prov, moda):
     if prov in HIERARKI_BRS and moda in HIERARKI_BRS[prov]:
         config = HIERARKI_BRS[prov][moda]
         df['match_key'] = df[row_col].astype(str).str.lower()
-        utama_lower = [str(x).lower() for x in config["utama"]]
-        lainnya_lower = [str(x).lower() for x in config["lainnya"]]
         
-        df_utama = df[df['match_key'].isin(utama_lower)].copy()
-        if not df_utama.empty:
-            df_utama = df_utama.drop(columns=['match_key'])
-            potongan.append(df_utama)
-            if len(config["lainnya"]) > 0:
-                sub_utama = pd.DataFrame(df_utama[raw_cols].sum()).T
-                sub_utama[row_col] = config["label_subtotal"]
-                potongan.append(sub_utama)
+        # --- PERBAIKAN: Ikuti urutan sesuai list hierarki, bukan terurut abjad ---
+        for entitas_utama in config.get("utama", []):
+            match_row = df[df['match_key'] == str(entitas_utama).lower()]
+            if not match_row.empty:
+                potongan.append(match_row.drop(columns=['match_key']))
+                
+        # Subtotal Utama jika ada list lainnya
+        if len(config.get("lainnya", [])) > 0 and potongan:
+            df_utama_gabung = pd.concat(potongan, ignore_index=True)
+            sub_utama = pd.DataFrame(df_utama_gabung[raw_cols].sum()).T
+            sub_utama[row_col] = config["label_subtotal"]
+            potongan.append(sub_utama)
             
-        if len(config["lainnya"]) > 0:
+        # Separator (Bandara/Pelabuhan Lainnya)
+        if len(config.get("lainnya", [])) > 0:
             separator = pd.DataFrame([{row_col: config["teks_separator"]}])
             for c in df.columns: 
                 if c != row_col and c != 'match_key': 
                     separator[c] = np.nan
             potongan.append(separator)
             
-            df_lain = df[df['match_key'].isin(lainnya_lower)].copy()
-            if not df_lain.empty:
-                df_lain = df_lain.drop(columns=['match_key'])
-                potongan.append(df_lain)
-                sub_lain = pd.DataFrame(df_lain[raw_cols].sum()).T
+            for entitas_lain in config.get("lainnya", []):
+                match_row_lain = df[df['match_key'] == str(entitas_lain).lower()]
+                if not match_row_lain.empty:
+                    potongan.append(match_row_lain.drop(columns=['match_key']))
+            
+            # Subtotal Lainnya
+            # Ambil elemen yang masuk kategori lainnya untuk dijumlahkan
+            lainnya_lower = [str(x).lower() for x in config["lainnya"]]
+            df_lain_gabung = df[df['match_key'].isin(lainnya_lower)]
+            if not df_lain_gabung.empty:
+                sub_lain = pd.DataFrame(df_lain_gabung[raw_cols].sum()).T
                 sub_lain[row_col] = config["label_subtotal"] + " " 
                 potongan.append(sub_lain)
-                
+        
+        # Jika ada entitas di database yang tidak terdaftar di hierarki, masukkan di bagian akhir
+        terdaftar = [str(x).lower() for x in config.get("utama", []) + config.get("lainnya", [])]
+        df_sisa = df[~df['match_key'].isin(terdaftar)].copy()
+        if not df_sisa.empty:
+            potongan.append(df_sisa.drop(columns=['match_key']))
+            
         if not potongan and not df.empty:
             if 'match_key' in df.columns: df = df.drop(columns=['match_key'])
             potongan.append(df)
@@ -164,6 +180,7 @@ def build_brs_display_table(report_flat, prov, moda):
         
     res = pd.concat(potongan, ignore_index=True).set_index(row_col) if potongan else df.set_index(row_col)
     
+    # Hitung kembali persentase M-to-M dan Y-on-Y untuk setiap baris (termasuk subtotal dan total)
     col_prev, col_curr = raw_cols[0], raw_cols[1]
     col_cum_prev, col_cum_curr = raw_cols[2], raw_cols[3]
     
