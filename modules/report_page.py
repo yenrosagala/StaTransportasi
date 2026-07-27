@@ -530,11 +530,21 @@ def prepare_table_item(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, l
         def highlight_rows(row):
             styles = [''] * len(row)
             val = str(row.name).strip().lower()
-            if val in ['subtotal', 'sub total', 'jumlah', 'total', 'total keseluruhan']:
-                styles = ['font-weight: bold; background-color: #fce8b2;'] * len(row)
+            
+            # Subtotal: Background oranye cerah, teks putih tebal
+            if val in ['subtotal', 'sub total', 'jumlah']:
+                styles = ['font-weight: bold; background-color: #f39c12; color: #ffffff;'] * len(row)
+            
+            # Total: Background oranye tua/navy, teks putih tebal
+            elif val in ['total', 'total keseluruhan']:
+                styles = ['font-weight: bold; background-color: #d35400; color: #ffffff;'] * len(row)
+            
+            # Lainnya: Background abu-abu terang, huruf miring
             elif 'lainnya' in val:
-                styles = ['font-style: italic; background-color: #e8eaed;'] * len(row)
+                styles = ['font-style: italic; background-color: #e8eaed; color: #000000;'] * len(row)
+                
             return styles
+            
         styler = styler.format(format_id_number).background_gradient(subset=pct_cols, cmap='RdYlGn')
         styler = styler.apply(highlight_rows, axis=1)
         return styler
