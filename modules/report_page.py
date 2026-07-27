@@ -220,14 +220,16 @@ def format_id_number(x, decimals=2):
     return s.replace(",", "§").replace(".", ",").replace("§", ".")
 
 NARRATIVE_META = {
-    'penumpang_datang':     {'subject': 'Jumlah penumpang yang datang', 'satuan': 'orang', 'is_penumpang': True},
-    'penumpang_berangkat':  {'subject': 'Jumlah penumpang yang berangkat', 'satuan': 'orang', 'is_penumpang': True},
-    'barang_bongkar_kg':    {'subject': 'Volume barang yang dibongkar', 'satuan': 'kg', 'is_penumpang': False},
-    'barang_muat_kg':       {'subject': 'Volume barang yang dimuat', 'satuan': 'kg', 'is_penumpang': False},
-    'dn_penumpang_turun':   {'subject': 'Jumlah penumpang yang datang', 'satuan': 'orang', 'is_penumpang': True},
-    'dn_penumpang_naik':    {'subject': 'Jumlah penumpang yang berangkat', 'satuan': 'orang', 'is_penumpang': True},
-    'dn_bongkar_barang_ton':{'subject': 'Volume barang yang dibongkar', 'satuan': 'ton', 'is_penumpang': False},
-    'dn_muat_barang_ton':   {'subject': 'Volume barang yang dimuat', 'satuan': 'ton', 'is_penumpang': False},
+    'penumpang_datang':      {'subject': 'Jumlah penumpang yang datang', 'satuan': 'orang', 'is_penumpang': True},
+    'penumpang_berangkat':   {'subject': 'Jumlah penumpang yang berangkat', 'satuan': 'orang', 'is_penumpang': True},
+    'barang_bongkar_kg':     {'subject': 'Volume barang yang dibongkar', 'satuan': 'kg', 'is_penumpang': False},
+    'barang_muat_kg':        {'subject': 'Volume barang yang dimuat', 'satuan': 'kg', 'is_penumpang': False},
+    'barang_bongkar_ton':    {'subject': 'Volume barang yang dibongkar', 'satuan': 'ton', 'is_penumpang': False},
+    'barang_muat_ton':       {'subject': 'Volume barang yang dimuat', 'satuan': 'ton', 'is_penumpang': False},
+    'dn_penumpang_turun':    {'subject': 'Jumlah penumpang yang datang', 'satuan': 'orang', 'is_penumpang': True},
+    'dn_penumpang_naik':     {'subject': 'Jumlah penumpang yang berangkat', 'satuan': 'orang', 'is_penumpang': True},
+    'dn_bongkar_barang_ton': {'subject': 'Volume barang yang dibongkar', 'satuan': 'ton', 'is_penumpang': False},
+    'dn_muat_barang_ton':    {'subject': 'Volume barang yang dimuat', 'satuan': 'ton', 'is_penumpang': False},
 }
 
 def _arah_dinamis(pct):
@@ -293,7 +295,6 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
     if not api_keys:
         return None, "No API Key"
 
-    # DAFTAR MODEL ROLLING SESUAI PERMINTAAN
     candidate_models = [
         "gemini-2.5-flash",
         "gemini-2.6-flash-lite",
@@ -327,7 +328,6 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
         
         for model_name in candidate_models:
             try:
-                # Mengirimkan api_key secara eksplisit untuk mencegah error 401 UNAUTHENTICATED
                 client = genai.Client(api_key=key.strip())
                 response = client.models.generate_content(
                     model=model_name,
@@ -438,7 +438,7 @@ def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln
     para2 = random.choice(p2_options)
     
     return para1, para2
-                                   
+                            
 def create_complete_master_word_report(prov, thn, bln, all_report_data):
     doc = docx.Document()
     doc.add_heading(f"Laporan Komprehensif Perkembangan Transportasi Provinsi {prov} - {bln} {thn}", level=1)
@@ -518,12 +518,7 @@ def create_complete_master_word_report(prov, thn, bln, all_report_data):
                     else:
                         row_cells[j].text = format_id_number(val, decimals=2) if val != "" else ""
             
-            if is_separator_row and total_cols > 1:
-                try:
-                    row_cells[0].merge(row_cells[total_cols - 1])
-                except Exception:
-                    pass
-                
+                         
         doc.add_paragraph()
         if p2:
             clean_p2 = re.sub(r'^\*\(.*?\)\*\n\n', '', p2)
@@ -536,10 +531,15 @@ def create_complete_master_word_report(prov, thn, bln, all_report_data):
     return file_stream
 
 def prepare_table_item(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, label, row_col, thn, bln, prev_bln, prev_thn, table_no=None, prov=None, moda=None):
-    curr_grp = df_curr.groupby(row_col)[col_target].sum()
-    prev_grp = df_prev.groupby(row_col)[col_target].sum()
-    cum_curr_grp = df_cum_curr.groupby(row_col)[col_target].sum()
-    cum_prev_grp = df_cum_prev.groupby(row_col)[col_target].sum()
+    # Konversi dari Kg ke Ton jika Provinsi Papua Tengah dan Moda Transportasi Udara
+    divisor = 1.0
+    if prov == "Papua Tengah" and moda == "Transportasi Udara" and "kg" in col_target.lower():
+        divisor = 1000.0
+
+    curr_grp = df_curr.groupby(row_col)[col_target].sum() / divisor
+    prev_grp = df_prev.groupby(row_col)[col_target].sum() / divisor
+    cum_curr_grp = df_cum_curr.groupby(row_col)[col_target].sum() / divisor
+    cum_prev_grp = df_cum_prev.groupby(row_col)[col_target].sum() / divisor
 
     report = pd.DataFrame(index=curr_grp.index)
     col_curr, col_prev = f"{bln} {thn}", f"{prev_bln} {prev_thn}"
@@ -555,7 +555,7 @@ def prepare_table_item(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, l
     report['M-to-M (%)'] = pd.Series(mtm_pct, index=report.index).replace([np.inf, -np.inf], np.nan)
 
     report[col_cum_prev] = cum_prev_grp.reindex(report.index).fillna(0)
-    report[col_cum_curr] = df_cum_curr.groupby(row_col)[col_target].sum().reindex(report.index).fillna(0)
+    report[col_cum_curr] = cum_curr_grp.reindex(report.index).fillna(0)
     
     cum_prev_vals = report[col_cum_prev].values
     cum_curr_vals = report[col_cum_curr].values
@@ -719,10 +719,18 @@ def show_report_page():
         moda_udara = "Transportasi Udara"
         df_cu, df_pr, df_cc, df_cp, p_bln, p_thn = get_comparison_data(prov, thn, bln, moda_udara)
         if not df_cu.empty:
-            targets_udara = [
-                ('penumpang_datang', 'Penumpang Datang'), ('penumpang_berangkat', 'Penumpang Berangkat'),
-                ('barang_bongkar_kg', 'Barang Bongkar (Kg)'), ('barang_muat_kg', 'Barang Muat (Kg)')
-            ]
+            # Penyesuaian Label untuk Papua Tengah
+            if prov == "Papua Tengah":
+                targets_udara = [
+                    ('penumpang_datang', 'Penumpang Datang'), ('penumpang_berangkat', 'Penumpang Berangkat'),
+                    ('barang_bongkar_kg', 'Barang Bongkar (Ton)'), ('barang_muat_kg', 'Barang Muat (Ton)')
+                ]
+            else:
+                targets_udara = [
+                    ('penumpang_datang', 'Penumpang Datang'), ('penumpang_berangkat', 'Penumpang Berangkat'),
+                    ('barang_bongkar_kg', 'Barang Bongkar (Kg)'), ('barang_muat_kg', 'Barang Muat (Kg)')
+                ]
+
             for col, label in targets_udara:
                 item = prepare_table_item(df_cu, df_pr, df_cc, df_cp, col, label, 'nama_bandara', thn, bln, p_bln, p_thn, table_no=global_table_counter, prov=prov, moda=moda_udara)
                 all_collected_data.append(item)
