@@ -270,12 +270,9 @@ def get_gemini_api_keys():
 
 def parse_two_paragraphs(text):
     if not text or not str(text).strip(): return None, None
-    parts = [p.strip() for p in str(text).strip().split("
-
-") if p.strip()]
-    if len(parts) >= 2: return parts[0], "
-
-".join(parts[1:])
+    parts = [p.strip() for p in str(text).strip().split("") 
+        if p.strip()]
+            if len(parts) >= 2: return parts[0], "".join(parts[1:])
     if len(parts) == 1: return parts[0], ""
     return None, None
 
@@ -418,6 +415,20 @@ def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln
             f"terhadap bulan {prev_bln} {prev_thn}. Apabila dirinci menurut wilayah utama, {entitas1} membukukan "
             f"{fmt(nilai1)} {meta['satuan']} atau {'naik' if mtm1 > 0 else 'turun'} {fmt_pct(abs(mtm1))} persen, sementara "
             f"{entitas2} menyusul dengan {fmt(nilai2)} {meta['satuan']} atau {'naik' if mtm2 > 0 else 'turun'} {fmt_pct(abs(mtm2))} persen."
+        ),
+        (
+        f"Pada bulan {bln} {thn}, {subject.lower()} tercatat sebanyak {fmt(total_curr)} {meta['satuan']}, atau "
+        f"mengalami {'kenaikan' if total_mtm > 0 else 'penurunan'} sebesar {abs_mtm} persen jika dibandingkan dengan "
+        f"{prev_bln} {prev_thn} yang mencapai {fmt(total_prev)} {meta['satuan']}. Secara rinci menurut {region_label.lower()}, "
+        f"{entitas1} membukukan {fmt(nilai1)} {meta['satuan']} ({'naik' if mtm1 > 0 else 'turun'} {fmt_pct(abs(mtm1))} persen) "
+        f"dan {entitas2} mencatatkan {fmt(nilai2)} {meta['satuan']} ({'naik' if mtm2 > 0 else 'turun'} {fmt_pct(abs(mtm2))} persen)."
+        ),
+        (
+            f"Realisasi agregat {subject.lower()} di Provinsi {prov} pada {bln} {thn} berada di angka "
+            f"{fmt(total_curr)} {meta['satuan']} ({'naik' if total_mtm > 0 else 'turun'} {abs_mtm} persen dibanding bulan {prev_bln} {prev_thn}). "
+            f"Kontribusi dominan terhadap capaian bulanan ini disumbangkan oleh {entitas1} sebesar {fmt(nilai1)} {meta['satuan']} "
+            f"({'naik' if mtm1 > 0 else 'turun'} {fmt_pct(abs(mtm1))} persen) serta {entitas2} sebesar {fmt(nilai2)} {meta['satuan']} "
+            f"({'naik' if mtm2 > 0 else 'turun'} {fmt_pct(abs(mtm2))} persen)."
         )
     ]
 
@@ -449,6 +460,21 @@ def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln
             f"mengalami {'pertumbuhan' if total_yoy > 0 else 'koreksi'} sebesar {abs_yoy} persen terhadap Januari–{bln} {int(thn)-1}. "
             f"Berdasarkan sebaran wilayah, {entitas1} mengalami perubahan sebesar {fmt_pct(abs(yoy1))} persen menjadi {fmt(cum1)} {meta['satuan']}, "
             f"sedangkan {entitas2} berubah sebesar {fmt_pct(abs(yoy2))} persen menjadi {fmt(cum2)} {meta['satuan']}."
+        ),
+        (
+        f"Perkembangan kumulatif {subject.lower()} dari Januari hingga {bln} {thn} mencatatkan total "
+        f"{fmt(total_cum_curr)} {meta['satuan']}, atau {'naik' if total_yoy > 0 else 'turun'} sebesar {abs_yoy} persen "
+        f"terhadap periode Januari–{bln} {int(thn)-1} yang sebesar {fmt(total_cum_prev)} {meta['satuan']}. "
+        f"Berdasarkan sebaran wilayah, {entitas1} mengalami {'kenaikan' if yoy1 > 0 else 'penurunan'} {fmt_pct(abs(yoy1))} persen "
+        f"menjadi {fmt(cum1)} {meta['satuan']} dari {fmt(cum1_prev)} {meta['satuan']}, sementara {entitas2} "
+        f"{'naik' if yoy2 > 0 else 'turun'} {fmt_pct(abs(yoy2))} persen menjadi {fmt(cum2)} {meta['satuan']} dari {fmt(cum2_prev)} {meta['satuan']}."
+        ),
+        (
+        f"Selama rentang waktu Januari–{bln} {thn}, volume {subject.lower()} secara kumulatif mencapai "
+        f"{fmt(total_cum_curr)} {meta['satuan']}, yang menunjukkan {'pertumbuhan' if total_yoy > 0 else 'koreksi'} {abs_yoy} persen "
+        f"dibanding Januari–{bln} tahun sebelumnya. Di tingkat wilayah, pergerakan ini dicerminkan oleh {entitas1} yang membukukan "
+        f"{fmt(cum1)} {meta['satuan']} ({'naik' if yoy1 > 0 else 'turun'} {fmt_pct(abs(yoy1))} persen) dan {entitas2} yang mencatat "
+        f"{fmt(cum2)} {meta['satuan']} ({'naik' if yoy2 > 0 else 'turun'} {fmt_pct(abs(yoy2))} persen)."
         )
     ]
 
