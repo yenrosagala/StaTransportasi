@@ -4,7 +4,7 @@ import os
 
 def get_engine():
     # Ambil connection string dari st.secrets atau environment variable
-    db_url = os.getenv("DATABASE_URL") or st.secrets.get("DATABASE_URL")
+    db_url = t.secrets.get("DATABASE_URL")
     
     # Fallback jika menggunakan format postgres:// ubah jadi postgresql://
     if db_url and db_url.startswith("postgres://"):
