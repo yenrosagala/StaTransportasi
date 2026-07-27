@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine, text
 import pandas as pd
 import os
-import streamlit
+import streamlit as st
 
 def get_engine():
     # Ambil connection string dari st.secrets atau environment variable
