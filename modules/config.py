@@ -54,15 +54,47 @@ MAPPING_LOKASI_KAB_PROV = {
 }
 
 def get_location_metadata(name):
+    # Tangani jika data kosong (NaN/None)
+    if pd.isna(name) or name is None:
+        return {'kab': None, 'prov': 'PAPUA'}
+        
     name_clean = str(name).upper().strip()
+    
+    # 1. Prioritas Pertama: Pencocokan Persis (Exact Match)
+    # Ini lebih aman untuk mencegah salah deteksi nama yang mirip
+    if name_clean in MAPPING_LOKASI_KAB_PROV:
+        return MAPPING_LOKASI_KAB_PROV[name_clean]
+        
+    # 2. Prioritas Kedua: Pencocokan Sebagian (Partial Match)
+    # Berguna jika format BPS menuliskan "BANDARA SENTANI" (sedangkan key hanya "SENTANI")
     for key, meta in MAPPING_LOKASI_KAB_PROV.items():
+        # Tambahkan spasi atau batas kata agar lebih presisi jika diperlukan, 
+        # namun implementasi 'in' dasar sudah cukup untuk level ini.
         if key in name_clean:
             return meta
+            
+    # Fallback jika tidak ada lokasi yang dikenali sama sekali
     return {'kab': None, 'prov': 'PAPUA'}
 
 def get_province_by_kabupaten(kab_name):
+    # 1. Bersihkan input dari data excel (Hapus kata KABUPATEN/KOTA jika terbawa)
     kab_clean = str(kab_name).upper().strip()
+    kab_clean = kab_clean.replace('KABUPATEN ', '').replace('KOTA ', '').strip()
+    
+    # Khusus untuk Jayapura, kita biarkan manual karena ada Kabupaten dan Kota
+    # Namun BPS biasanya membedakan kodenya atau menulis 'KOTA JAYAPURA'
+    if kab_clean == 'JAYAPURA' and 'KOTA' in str(kab_name).upper():
+        return 'PAPUA' # Kota Jayapura tetap di Papua
+        
+    # 2. Cocokkan dengan dictionary
     for prov, kabs in PEMETAAN_WILAYAH.items():
-        if kab_clean in [k.upper() for k in kabs]:
-            return prov.upper()
+        for k in kabs:
+            # Bersihkan juga nama di dictionary saat mencocokkan
+            k_clean = k.upper().replace('KABUPATEN ', '').replace('KOTA ', '').strip()
+            
+            # Jika nama kabupaten/kota cocok
+            if kab_clean == k_clean:
+                return prov.upper()
+                
+    # Fallback jika tidak ditemukan
     return 'PAPUA'
