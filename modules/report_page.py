@@ -281,7 +281,7 @@ def parse_two_paragraphs(text):
     if len(parts) == 1: return parts[0], ""
     return None, None
 
-def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln, prev_thn, model_name="gemini-2.5-flash"):
+def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln, prev_thn):
     cache_key = get_cache_key(prov, moda, label, bln, thn)
     ensure_narasi_cache()
     cache = st.session_state["narasi_cache"]
@@ -293,48 +293,52 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
     if not api_keys:
         return None, "No API Key"
 
-    # Inisialisasi index rolling di st.session_state jika belum ada
+    candidate_models = [
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+        "gemini-pro"
+    ]
+
     if "gemini_key_index" not in st.session_state:
         st.session_state["gemini_key_index"] = 0
 
     num_keys = len(api_keys)
     data_str = df_flat.to_markdown(index=False)
     
+    # PROMPT YANG DITINGKATKAN PROFESIONALITASNYA
     prompt = (
-        "Bertindaklah sebagai Kepala Pusat Statistik yang menyusun Executive Summary eksekutif untuk Dewan Pimpinan dan Pengambil Kebijakan.\n"
-        f"Buat ringkasan naratif tingkat tinggi (executive summary) tepat 2 paragraf untuk indikator \"{label}\" pada moda {moda} di Provinsi {prov} ({bln} {thn} dibanding {prev_bln} {prev_thn}).\n\n"
-        "Aturan:\n"
-        "- Paragraf pertama fokus pada kinerja bulanan/MTM, arah tren, dan total agregat wilayah utama.\n"
-        "- Paragraf kedua fokus pada performa kumulatif YTD/YOY, proyeksi pertumbuhan, dan deviasi signifikan antar wilayah.\n"
-        "- Gunakan bahasa formal, tajam, analitis, format angka Indonesia.\n"
-        "- Jangan berikan pengantar atau penutup, langsung berikan 2 paragraf teks yang dipisahkan oleh satu baris kosong (\\n\\n).\n\n"
-        "Data Tabel:\n"
+        "Anda adalah Kepala Pusat Statistik / Penasihat Kebijakan Utama yang menyusun ringkasan eksekutif strategis berstandar tinggi bagi Dewan Pimpinan dan Pengambil Kebijakan.\n"
+        f"Buatlah narasi Executive Summary tingkat tinggi yang padat dan tajam (tepat 2 paragraf) untuk indikator statistik \"{label}\" pada moda {moda} Wilayah Provinsi {prov} periode komparasi {bln} {thn} terhadap {prev_bln} {prev_thn}.\n\n"
+        "Pedoman & Fokus Penulisan:\n"
+        "- Paragraf 1: Analisis komprehensif kinerja bulanan (Month-to-Month/MTM), arah tren sektoral, serta kontribusi agregat dari wilayah-wilayah utama dalam hierarki BRS.\n"
+        "- Paragraf 2: Analisis mendalam kinerja kumulatif (Year-to-Date / Year-on-Year), pembacaan deviasi pertumbuhan, serta signifikansi fluktuasi antarwilayah dalam kerangka ekonomi regional.\n"
+        "- Gunakan diksi birokratik profesional, objektif, analitis, dengan standarisasi format angka Indonesia.\n"
+        "- Jangan sertakan pengantar, sapaan, catatan kaki, ataupun penutup. Langsung berikan 2 paragraf teks yang dipisahkan oleh satu baris kosong (\\n\\n).\n\n"
+        "Sumber Data Tabel:\n"
         f"{data_str}"
     )
 
-    # Lakukan loop sebanyak jumlah key yang ada dengan teknik rolling offset
     for attempt in range(num_keys):
         current_idx = (st.session_state["gemini_key_index"] + attempt) % num_keys
         key = api_keys[current_idx]
         
-        try:
-            client = genai.Client(api_key=key.strip())
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=genai.types.GenerateContentConfig(temperature=0.2)
-            )
-            raw_text = getattr(response, "text", None)
-            if raw_text and str(raw_text).strip():
-                text_clean = str(raw_text).strip()
-                cache[cache_key] = text_clean
-                
-                # Geser index ke key berikutnya untuk pemanggilan selanjutnya (Rolling Success)
-                st.session_state["gemini_key_index"] = (current_idx + 1) % num_keys
-                return text_clean, "Gemini AI"
-        except Exception as e:
-            logger.warning("API Key ke-%d gagal: %s. Melakukan rolling ke key berikutnya...", current_idx + 1, e)
-            continue
+        for model_name in candidate_models:
+            try:
+                client = genai.Client(api_key=key.strip())
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=genai.types.GenerateContentConfig(temperature=0.2)
+                )
+                raw_text = getattr(response, "text", None)
+                if raw_text and str(raw_text).strip():
+                    text_clean = str(raw_text).strip()
+                    cache[cache_key] = text_clean
+                    st.session_state["gemini_key_index"] = (current_idx + 1) % num_keys
+                    return text_clean, "Gemini AI"
+            except Exception as e:
+                logger.warning("Gagal pada Report dengan Key ke-%d menggunakan model %s: %s. Mencoba opsi lain...", current_idx + 1, model_name, e)
+                continue
             
     return None, "Failed"
 
