@@ -27,7 +27,7 @@ HIERARKI_BRS = {
     "Papua Tengah": {
         "Transportasi Udara": {
             "utama": ['Douw Aturure', 'Mozes Kilangin'],
-            "lainnya": ['Enarotali', 'Zugapa Bilorai', 'Moanamani', 'Sinak', 'Ilaga', 'Beoga', 'Mulia'],
+            "lainnya": ['Enarotali', 'Zugapa Bilorai', 'Moanamani', 'Sinak', 'Illaga', 'Beoga', 'Mulia'],
             "label_subtotal": "Sub Total",
             "label_total": "Total",
             "teks_separator": "Bandara Lainnya"
