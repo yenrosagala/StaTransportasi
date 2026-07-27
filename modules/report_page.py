@@ -287,7 +287,13 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
     if not api_keys:
         return None, "No API Key"
 
-    candidate_models = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]
+    candidate_models = [
+        "gemini-1.5-flash",
+        "gemini-2.5-flash",
+        "gemini-2.5-lite",
+        "gemini-1.5-pro",
+        "gemini-pro"
+    ]
 
     if "gemini_key_index" not in st.session_state:
         st.session_state["gemini_key_index"] = 0
@@ -296,24 +302,13 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
     data_str = df_flat.to_markdown(index=False)
     
     prompt = (
-        "Anda adalah seorang jurnalis data/ekonomi profesional di media arus utama (setara Kontan, Bisnis Indonesia, atau Reuters), "
-        "yang menulis laporan statistik dengan gaya jurnalistik yang tajam namun tetap akurat dan berimbang.\n"
-        f"Tulislah narasi berita (tepat 2 paragraf, masing-masing TEPAT 3 kalimat) tentang perkembangan \"{label}\" pada moda {moda} "
-        f"di Provinsi {prov} periode {bln} {thn} dibandingkan {prev_bln} {prev_thn}.\n\n"
+        "Anda adalah Kepala Pusat Statistik / Penasihat Kebijakan Utama yang menyusun ringkasan eksekutif strategis berstandar tinggi bagi Dewan Pimpinan dan Pengambil Kebijakan.\n"
+        f"Buatlah narasi Executive Summary tingkat tinggi yang padat dan tajam (tepat 2 paragraf) untuk indikator statistik \"{label}\" pada moda {moda} Wilayah Provinsi {prov} periode komparasi {bln} {thn} terhadap {prev_bln} {prev_thn}.\n\n"
         "Pedoman & Fokus Penulisan:\n"
-        "- Paragraf 1 (3 kalimat): Kalimat pertama adalah lead berita yang menyampaikan kondisi keseluruhan provinsi secara bulanan "
-        "(Month-to-Month) dengan gaya membuka berita yang menarik namun faktual. Kalimat kedua menyoroti wilayah/entitas dengan "
-        "kontribusi atau pertumbuhan TERTINGGI. Kalimat ketiga menyoroti wilayah/entitas dengan kontribusi atau pertumbuhan TERENDAH/"
-        "penurunan terdalam.\n"
-        "- Paragraf 2 (3 kalimat): Kalimat pertama menyampaikan kondisi kumulatif (Year-to-Date/Year-on-Year) provinsi secara keseluruhan. "
-        "Kalimat kedua menyoroti wilayah dengan kontribusi kumulatif TERTINGGI. Kalimat ketiga menyoroti wilayah dengan kontribusi "
-        "kumulatif TERENDAH.\n"
-        "- Gunakan gaya bahasa jurnalistik yang hidup dan bervariasi (mis. 'melonjak', 'menggeliat', 'anjlok', 'melemah', 'mencuri "
-        "perhatian', 'tampil kontras') namun tetap profesional, objektif, dan tidak sensasional/clickbait. Hindari diksi birokratik "
-        "kaku seperti 'tercatat sebanyak' yang berulang.\n"
-        "- Selalu sebutkan angka yang tepat dengan format Indonesia (titik untuk ribuan, koma untuk desimal).\n"
-        "- Jangan sertakan judul berita, pengantar, sapaan, catatan kaki, ataupun penutup. Langsung berikan 2 paragraf teks yang "
-        "dipisahkan oleh satu baris kosong (\\n\\n).\n\n"
+        "- Paragraf 1: Analisis komprehensif kinerja bulanan (Month-to-Month/MTM), arah tren sektoral, serta kontribusi agregat dari wilayah-wilayah utama dalam hierarki BRS.\n"
+        "- Paragraf 2: Analisis mendalam kinerja kumulatif (Year-to-Date / Year-on-Year), pembacaan deviasi pertumbuhan, serta signifikansi fluktuasi antarwilayah dalam kerangka ekonomi regional.\n"
+        "- Gunakan diksi birokratik profesional, objektif, analitis, dengan standarisasi format angka Indonesia.\n"
+        "- Jangan sertakan pengantar, sapaan, catatan kaki, ataupun penutup. Langsung berikan 2 paragraf teks yang dipisahkan oleh satu baris kosong (\\n\\n).\n\n"
         "Sumber Data Tabel:\n"
         f"{data_str}"
     )
@@ -324,7 +319,9 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
         
         for model_name in candidate_models:
             try:
+                # PERBAIKAN: Masukkan api_key secara eksplisit ke dalam genai.Client agar tidak terjadi error 401
                 client = genai.Client(api_key=key.strip())
+                
                 response = client.models.generate_content(
                     model=model_name,
                     contents=prompt,
@@ -341,7 +338,6 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
                 continue
             
     return None, "Failed"
-
 
 def _get_extreme_entities(report_flat, col_prev, col_curr, col_cum_prev, col_cum_curr, metric_col):
     """Cari entitas (kabupaten/bandara/pelabuhan) dengan nilai metric_col (M-to-M atau
