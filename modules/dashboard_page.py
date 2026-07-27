@@ -477,7 +477,7 @@ def show_section(engine, table, moda_title, icon, header_color,
 # MAIN PAGE
 # ==============================================================================
 def show_dashboard_page():
-    st.title("📊 Dashboard Perkembangan Transportasi Papua")
+    st.title("📊 Dashboard Statistik Perkembangan Transportasi")
 
     engine = get_engine()
     periods = get_available_periods(engine)
