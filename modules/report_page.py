@@ -344,7 +344,7 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
 
 
 def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln, thn, prev_bln, prev_thn,
-                                col_prev, col_curr, col_cum_prev, col_cum_curr, prov=""):
+                               col_prev, col_curr, col_cum_prev, col_cum_curr, prov=""):
     meta = NARRATIVE_META.get(col_target, {'subject': 'Total volume', 'satuan': '', 'is_penumpang': False})
     angkutan_kecil = 'udara' if moda == 'Transportasi Udara' else 'laut'
     val_decimals = 0 if meta['satuan'] == 'orang' else 2
@@ -352,28 +352,106 @@ def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln
     fmt_pct = lambda v: format_id_number(v, decimals=2)
 
     subject = meta['subject']
-    if meta['is_penumpang']: subject += f" angkutan {angkutan_kecil} domestik"
+    if meta['is_penumpang']: 
+        subject += f" angkutan {angkutan_kecil} domestik"
 
     total = report_flat.loc['TOTAL']
     total_curr, total_prev, total_mtm = total[col_curr], total[col_prev], total['M-to-M (%)']
     total_cum_curr, total_cum_prev, total_yoy = total[col_cum_curr], total[col_cum_prev], total['Y-on-Y (%)']
 
-    para1 = (
-        f"Berdasarkan data makro regional, {subject.lower()} di Provinsi {prov} pada periode {bln} {thn} "
-        f"membukukan angka aggregate sebesar {fmt(total_curr)} {meta['satuan']}. "
-        f"Kinerja bulanan ini menunjukkan pergerakan yang {_arah_dinamis(total_mtm)} dengan pertumbuhan "
-        f"sebesar {fmt_pct(abs(total_mtm) if pd.notna(total_mtm) else np.nan)} persen apabila dikomparasikan "
-        f"terhadap baseline bulan {prev_bln} {prev_thn}."
-    )
-    
-    para2 = (
-        f"Secara makro kumulatif (Year-to-Date hingga {bln} {thn}), total realisasi mencapai {fmt(total_cum_curr)} "
-        f"{meta['satuan']}, atau mencatatkan tren pertumbuhan {_arah_dinamis(total_yoy)} di level {fmt_pct(abs(total_yoy) if pd.notna(total_yoy) else np.nan)} "
-        f"persen secara Y-on-Y terhadap periode operasional tahun sebelumnya, merefleksikan pemulihan dan stabilitas sektor transportasi regional."
-    )
+    abs_mtm = fmt_pct(abs(total_mtm) if pd.notna(total_mtm) else np.nan)
+    abs_yoy = fmt_pct(abs(total_yoy) if pd.notna(total_yoy) else np.nan)
+
+    # --------------------------------------------------------------------------
+    # VARIASI OPSI PARAGRAF 1 (Kinerja Bulanan / MTM) - 5 Opsi
+    # --------------------------------------------------------------------------
+    p1_options = [
+        # Opsi A: Gaya BRS Makro
+        (
+            f"Berdasarkan hasil pencatatan data makro sektoral, {subject.lower()} di Provinsi {prov} pada periode {bln} {thn} "
+            f"membukukan realisasi agregat sebesar {fmt(total_curr)} {meta['satuan']}. "
+            f"Kinerja bulanan tersebut menunjukkan pergerakan yang {_arah_dinamis(total_mtm)} dengan tingkat fluktuasi "
+            f"sebesar {abs_mtm} persen apabila dikomparasikan terhadap baseline operasional bulan {prev_bln} {prev_thn} "
+            f"yang berada di angka {fmt(total_prev)} {meta['satuan']}."
+        ),
+        # Opsi B: Gaya Evaluasi Tren
+        (
+            f"Dinamika sektor transportasi mencatat bahwa {subject.lower()} di wilayah Provinsi {prov} "
+            f"mencapai volume total {fmt(total_curr)} {meta['satuan']} selama bulan {bln} {thn}. "
+            f"Realisasi ini {_arah_dinamis(total_mtm)} sebesar {abs_mtm} persen secara month-to-month (M-to-M) "
+            f"dibandingkan kondisi bulan {prev_bln} {prev_thn} yang mencatatkan angka {fmt(total_prev)} {meta['satuan']}."
+        ),
+        # Opsi C: Gaya Ringkasan Eksekutif
+        (
+            f"Pada periode {bln} {thn}, aggregate volume {subject.lower()} untuk Provinsi {prov} "
+            f"berada pada level {fmt(total_curr)} {meta['satuan']}. "
+            f"Perkembangan indikator ini mengindikasikan adanya pergerakan yang {_arah_dinamis(total_mtm)} "
+            f"dengan deviasi sebesar {abs_mtm} persen dari performa bulan sebelumnya ({prev_bln} {prev_thn})."
+        ),
+        # Opsi D: Gaya Analitis Birokratik (Baru)
+        (
+            f"Meninjau kinerja operasional bulanan, volume {subject.lower()} di Provinsi {prov} pada {bln} {thn} "
+            f"tercatat sebesar {fmt(total_curr)} {meta['satuan']}. Capaian tersebut memperlihatkan tren yang {_arah_dinamis(total_mtm)} "
+            f"sebesar {abs_mtm} persen jika disandingkan dengan posisi bulan {prev_bln} {prev_thn} "
+            f"yang sebelumnya membukukan {fmt(total_prev)} {meta['satuan']}."
+        ),
+        # Opsi E: Gaya Resmi Publikasi Statistik (Baru)
+        (
+            f"Perkembangan arus {subject.lower()} di Provinsi {prov} pada bulan {bln} {thn} "
+            f"menunjukkan angka total mencapai {fmt(total_curr)} {meta['satuan']}. "
+            f"Secara bulanan, parameter ini {_arah_dinamis(total_mtm)} dengan persentase perubahan di kisaran {abs_mtm} persen "
+            f"terhadap catatan volume pada periode pembanding bulan {prev_bln} {prev_thn}."
+        )
+    ]
+
+    # --------------------------------------------------------------------------
+    # VARIASI OPSI PARAGRAF 2 (Kinerja Kumulatif / YOY) - 5 Opsi
+    # --------------------------------------------------------------------------
+    p2_options = [
+        # Opsi A: Gaya BRS Makro
+        (
+            f"Secara kumulatif (Year-to-Date hingga {bln} {thn}), akumulasi realisasi {subject.lower()} "
+            f"telah menyentuh angka {fmt(total_cum_curr)} {meta['satuan']}. "
+            f"Capaian ini mencatatkan tren pertumbuhan yang {_arah_dinamis(total_yoy)} sebesar {abs_yoy} persen "
+            f"secara Year-on-Year (Y-on-Y) jika dibandingkan dengan akumulasi periode yang sama pada tahun sebelumnya "
+            f"({fmt(total_cum_prev)} {meta['satuan']}), merefleksikan stabilitas aktivitas ekonomi regional."
+        ),
+        # Opsi B: Gaya Evaluasi Tren
+        (
+            f"Meninjau kinerja tahun berjalan hingga bulan {bln} {thn}, total realisasi kumulatif tercatat sebesar {fmt(total_cum_curr)} "
+            f"{meta['satuan']}. Dibandingkan dengan capaian kumulatif Januari–{bln} tahun sebelumnya ({fmt(total_cum_prev)} {meta['satuan']}), "
+            f"indikator ini {_arah_dinamis(total_yoy)} di level {abs_yoy} persen secara Y-on-Y, yang menggambarkan daya tahan "
+            f"serta dinamika pemulihan konektivitas wilayah."
+        ),
+        # Opsi C: Gaya Ringkasan Eksekutif
+        (
+            f"Ditinjau dari perspektif kumulatif tahunan (Januari–{bln} {thn}), volume agregat {subject.lower()} "
+            f"mencapai {fmt(total_cum_curr)} {meta['satuan']}. Performa ini menunjukkan kurva laju yang {_arah_dinamis(total_yoy)} "
+            f"sebesar {abs_yoy} persen Y-on-Y terhadap baseline operasional tahun sebelumnya, memberi gambaran optimisme "
+            f"bagi keberlanjutan moda transportasi di Provinsi {prov}."
+        ),
+        # Opsi D: Gaya Analitis Birokratik (Baru)
+        (
+            f"Lebih lanjut, analisis secara kumulatif dari Januari hingga {bln} {thn} menunjukkan total volume penyerapan "
+            f"sebesar {fmt(total_cum_curr)} {meta['satuan']}. Angka tersebut mencerminkan dinamika yang {_arah_dinamis(total_yoy)} "
+            f"sebesar {abs_yoy} persen secara tahunan (Y-on-Y) apabila dikontraskan dengan capaian periode yang sama tahun lalu "
+            f"sebesar {fmt(total_cum_prev)} {meta['satuan']}."
+        ),
+        # Opsi E: Gaya Resmi Publikasi Statistik (Baru)
+        (
+            f"Dalam rentang waktu tahun berjalan (Year-to-Date) sampai dengan {bln} {thn}, akumulasi arus {subject.lower()} "
+            f"terakumulasi pada angka {fmt(total_cum_curr)} {meta['satuan']}. Kinerja makro ini {_arah_dinamis(total_yoy)} "
+            f"di level {abs_yoy} persen secara Year-on-Year, menandakan adanya penyesuaian struktural dan pola mobilitas baru "
+            f"di kawasan regional."
+        )
+    ]
+
+    # Pilih variasi kalimat secara acak dari total 5 opsi yang tersedia
+    para1 = random.choice(p1_options)
+    para2 = random.choice(p2_options)
     
     return para1, para2
-
+                                   
 def create_complete_master_word_report(prov, thn, bln, all_report_data):
     doc = docx.Document()
     doc.add_heading(f"Laporan Komprehensif Perkembangan Transportasi Provinsi {prov} - {bln} {thn}", level=1)
