@@ -11,6 +11,10 @@ logger = logging.getLogger(__name__)
 if not logger.handlers:
     logging.basicConfig(level=logging.INFO)
 
+
+# ==============================================================================
+# HELPER MANDIRI
+# ==============================================================================
 def format_id_number(x, decimals=2):
     if pd.isna(x) or str(x).lower() in ['nan', 'inf', '-inf', 'undefined']:
         return "Undefined"
@@ -23,6 +27,7 @@ def format_id_number(x, decimals=2):
         return str(x)
     return s.replace(",", "§").replace(".", ",").replace("§", ".")
 
+
 def _arah_dinamis(pct):
     if pd.isna(pct):
         return "tercatat"
@@ -32,18 +37,23 @@ def _arah_dinamis(pct):
         return random.choice(["terkoreksi", "turun", "mengalami penurunan", "menyusut"])
     return "stabil"
 
+
 def get_gemini_api_keys():
     keys = []
     def add_value(v):
-        if not v: return
+        if not v:
+            return
         if isinstance(v, str):
             v = v.strip()
-            if v: keys.append(v)
+            if v:
+                keys.append(v)
         elif isinstance(v, (list, tuple)):
-            for x in v: add_value(x)
+            for x in v:
+                add_value(x)
         else:
             s = str(v).strip()
-            if s: keys.append(s)
+            if s:
+                keys.append(s)
 
     try:
         add_value(st.secrets.get("GEMINI_API_KEYS"))
@@ -71,6 +81,49 @@ MONTH_ABBR = {'Januari': 'Jan', 'Februari': 'Feb', 'Maret': 'Mar', 'April': 'Apr
 
 PROVINSI_ORDER = ['Papua', 'Papua Selatan', 'Papua Tengah', 'Papua Pegunungan']
 
+
+# ==============================================================================
+# DATABASE RETRIEVE & SAVE HELPERS UNTUK DASHBOARD
+# ==============================================================================
+def get_db_narrative(report_type, period_key):
+    try:
+        engine = get_engine()
+        with engine.raw_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT narrative_text FROM ai_narratives WHERE report_type = %s AND period_key = %s",
+                    (report_type, period_key)
+                )
+                result = cursor.fetchone()
+                if result:
+                    return result[0]
+    except Exception as e:
+        logger.warning("Gagal retrieve narasi dashboard dari database: %s", e)
+    return None
+
+
+def save_db_narrative(report_type, period_key, narrative_text):
+    try:
+        engine = get_engine()
+        with engine.raw_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO ai_narratives (report_type, period_key, narrative_text, created_at)
+                    VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+                    ON CONFLICT (report_type, period_key) 
+                    DO UPDATE SET narrative_text = EXCLUDED.narrative_text, created_at = CURRENT_TIMESTAMP
+                    """,
+                    (report_type, period_key, narrative_text)
+                )
+                conn.commit()
+    except Exception as e:
+        logger.error("Gagal menyimpan narasi dashboard ke database: %s", e)
+
+
+# ==============================================================================
+# HELPERS DATA
+# ==============================================================================
 def get_available_periods(engine):
     periods = set()
     for table in ['transportasi_udara', 'transportasi_laut']:
@@ -82,15 +135,18 @@ def get_available_periods(engine):
             continue
     return sorted(periods, key=lambda x: (x[0], MONTH_MAP.get(x[1], 0)))
 
+
 def get_prev_period(thn, bln):
     m = MONTH_MAP[bln]
     if m > 1:
         return thn, INV_MONTH_MAP[m - 1]
     return thn - 1, 'Desember'
 
+
 def load_period_data(engine, table, thn, bln):
     query = f"SELECT * FROM {table} WHERE CAST(tahun AS TEXT) = :thn AND bulan = :bln"
     return pd.read_sql(text(query), engine, params={"thn": str(thn), "bln": bln})
+
 
 def agg_by_provinsi(df, cols):
     base = pd.DataFrame(0.0, index=PROVINSI_ORDER, columns=cols)
@@ -104,10 +160,12 @@ def agg_by_provinsi(df, cols):
             base.loc[p] = g.loc[p]
     return base
 
+
 def pct_change(curr, prev):
     if prev == 0 or pd.isna(prev) or pd.isna(curr):
         return None
     return (curr - prev) / prev * 100
+
 
 def load_cumulative_data(engine, table, thn, bln):
     bln_num = MONTH_MAP[bln]
@@ -117,6 +175,7 @@ def load_cumulative_data(engine, table, thn, bln):
     query = f"SELECT * FROM {table} WHERE CAST(tahun AS TEXT) = :thn AND bulan IN ({placeholders})"
     params["thn"] = str(thn)
     return pd.read_sql(text(query), engine, params=params)
+
 
 def build_stacked_bar(df_curr, col_bottom, col_top, label_bottom, label_top,
                        color_bottom, color_top, title):
@@ -140,6 +199,7 @@ def build_stacked_bar(df_curr, col_bottom, col_top, label_bottom, label_top,
     )
     return fig
 
+
 def build_growth_table(df_curr, df_prev, cols, labels, periode_label):
     rows = []
     for prov in PROVINSI_ORDER:
@@ -150,6 +210,7 @@ def build_growth_table(df_curr, df_prev, cols, labels, periode_label):
             row[f"PERKEMBANGAN {l} {periode_label} (%)"] = pct_change(curr_v, prev_v)
         rows.append(row)
     return pd.DataFrame(rows).set_index('PROVINSI')
+
 
 def style_growth_table(df, header_color):
     def fmt(v):
@@ -163,6 +224,10 @@ def style_growth_table(df, header_color):
     ])
     return styler
 
+
+# ==============================================================================
+# NARASI PER SECTION (Executive Summary)
+# ==============================================================================
 def compute_indicator_stats(df_curr, df_prev, df_cum_curr, df_cum_prev, cols):
     combined_curr = df_curr[cols].sum(axis=1)
     combined_prev = df_prev[cols].sum(axis=1)
@@ -181,48 +246,13 @@ def compute_indicator_stats(df_curr, df_prev, df_cum_curr, df_cum_prev, cols):
         'mtm_per_prov': mtm_per_prov, 'yoy_per_prov': yoy_per_prov,
     }
 
+
 def _top_bottom(series):
     valid = series.dropna()
     if valid.empty:
         return None, None
     return {'nama': valid.idxmax(), 'pct': valid.max()}, {'nama': valid.idxmin(), 'pct': valid.min()}
 
-# ==============================================================================
-# DATABASE RETRIEVE & SAVE HELPERS UNTUK DASHBOARD
-# ==============================================================================
-def get_db_narrative(report_type, period_key):
-    try:
-        engine = get_engine()
-        with engine.raw_connection() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    "SELECT narrative_text FROM ai_narratives WHERE report_type = %s AND period_key = %s",
-                    (report_type, period_key)
-                )
-                result = cursor.fetchone()
-                if result:
-                    return result[0]
-    except Exception as e:
-        logger.warning("Gagal retrieve narasi dari database: %s", e)
-    return None
-
-def save_db_narrative(report_type, period_key, narrative_text):
-    try:
-        engine = get_engine()
-        with engine.raw_connection() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    """
-                    INSERT INTO ai_narratives (report_type, period_key, narrative_text, created_at)
-                    VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
-                    ON CONFLICT (report_type, period_key) 
-                    DO UPDATE SET narrative_text = EXCLUDED.narrative_text, created_at = CURRENT_TIMESTAMP
-                    """,
-                    (report_type, period_key, narrative_text)
-                )
-                conn.commit()
-    except Exception as e:
-        logger.error("Gagal menyimpan narasi ke database: %s", e)
 
 def generate_section_narrative_ai(moda_nama, bln, thn, prev_bln, prev_thn,
                                    penumpang_stats, barang_stats, satuan_barang):
@@ -284,7 +314,8 @@ def generate_section_narrative_ai(moda_nama, bln, thn, prev_bln, prev_thn,
                 logger.warning("Gagal dengan Key ke-%d menggunakan model %s: %s", current_idx + 1, model_name, e)
                 continue
             
-    return None
+    return None                                       
+
 
 def generate_section_narrative_fallback(moda_nama, bln, thn, prev_bln, prev_thn,
                                          penumpang_stats, barang_stats, satuan_barang):
@@ -306,6 +337,7 @@ def generate_section_narrative_fallback(moda_nama, bln, thn, prev_bln, prev_thn,
     )
     return para1, para2
 
+
 def render_section_narrative(moda_nama, table, engine, cols_penumpang, cols_barang, satuan_barang,
                             df_curr, df_prev, thn, bln, prev_thn, prev_bln):
     report_type = f"dashboard_{table}"
@@ -319,7 +351,7 @@ def render_section_narrative(moda_nama, table, engine, cols_penumpang, cols_bara
         para2 = "\n\n".join(parts[1:]) if len(parts) > 1 else ""
         source = "Database (Cached)"
     else:
-        # Jika belum ada di DB, generate via AI / Fallback
+        # Jika belum ada di DB, generate via AI / Fallback lalu simpan otomatis ke DB
         df_cum_curr_raw = load_cumulative_data(engine, table, thn, bln)
         df_cum_prev_raw = load_cumulative_data(engine, table, thn - 1, bln)
         all_cols = cols_penumpang + cols_barang
@@ -347,17 +379,15 @@ def render_section_narrative(moda_nama, table, engine, cols_penumpang, cols_bara
             full_text = f"{para1}\n\n{para2}"
             source = "Sistem Fallback"
             
-        # Simpan otomatis ke database saat pertama kali di-generate
         save_db_narrative(report_type, period_key, full_text)
 
     h1, h2 = st.columns([5, 1])
     with h1:
         st.markdown(f"**📝 Ringkasan Naratif** *(Sumber: {source})*")
     with h2:
-        # Batasi tombol regenerasi hanya untuk role admin
-        if st.session_state.get("role") == "admin":
-            if st.button("🔄 Regenerasi", key=f"regen_{table}_{thn}_{bln}", width='stretch'):
-                # Hapus dari database agar dipaksa generate ulang
+        # Tombol Regenerasi hanya di-enable jika admin sudah login
+        if st.session_state.get('admin_logged_in', False):
+            if st.button("🔄 Regenerasi", key=f"regen_{table}_{thn}_{bln}", use_container_width=True):
                 try:
                     with engine.raw_connection() as conn:
                         with conn.cursor() as cursor:
@@ -367,13 +397,17 @@ def render_section_narrative(moda_nama, table, engine, cols_penumpang, cols_bara
                             )
                             conn.commit()
                 except Exception as e:
-                    logger.error("Gagal menghapus cache database: %s", e)
+                    logger.error("Gagal menghapus cache database dashboard: %s", e)
                 st.rerun()
 
     st.markdown(para1)
     if para2:
         st.markdown(para2)
 
+
+# ==============================================================================
+# SECTION RENDERER
+# ==============================================================================
 def show_section(engine, table, moda_title, icon, header_color,
                   cols_penumpang, labels_penumpang, colors_penumpang,
                   cols_barang, labels_barang, colors_barang,
@@ -400,7 +434,7 @@ def show_section(engine, table, moda_title, icon, header_color,
             colors_penumpang[0], colors_penumpang[1],
             "PENUMPANG DATANG DAN BERANGKAT"
         )
-        st.plotly_chart(fig1, width='stretch')
+        st.plotly_chart(fig1, use_container_width=True)
     with c2:
         fig2 = build_stacked_bar(
             df_curr, cols_barang[0], cols_barang[1],
@@ -408,16 +442,16 @@ def show_section(engine, table, moda_title, icon, header_color,
             colors_barang[0], colors_barang[1],
             "MUAT DAN BONGKAR BARANG"
         )
-        st.plotly_chart(fig2, width='stretch')
+        st.plotly_chart(fig2, use_container_width=True)
 
     periode_label = f"{MONTH_ABBR[prev_bln]}-{MONTH_ABBR[bln]} {thn}"
     t1, t2 = st.columns(2)
     with t1:
         tbl1 = build_growth_table(df_curr, df_prev, cols_penumpang, labels_penumpang, periode_label)
-        st.dataframe(style_growth_table(tbl1, header_color), width='stretch')
+        st.dataframe(style_growth_table(tbl1, header_color), use_container_width=True)
     with t2:
         tbl2 = build_growth_table(df_curr, df_prev, cols_barang, labels_barang, periode_label)
-        st.dataframe(style_growth_table(tbl2, "#C0392B" if header_color != "#C0392B" else "#7B241C"), width='stretch')
+        st.dataframe(style_growth_table(tbl2, "#C0392B" if header_color != "#C0392B" else "#7B241C"), use_container_width=True)
 
     satuan_barang = "ton" if moda_title == "Laut" else "kg"
     render_section_narrative(
@@ -425,6 +459,10 @@ def show_section(engine, table, moda_title, icon, header_color,
         df_curr, df_prev, thn, bln, prev_thn, prev_bln
     )
 
+
+# ==============================================================================
+# MAIN PAGE
+# ==============================================================================
 def show_dashboard_page():
     st.title("📊 Dashboard Statistik Perkembangan Transportasi")
 
@@ -469,3 +507,11 @@ def show_dashboard_page():
         colors_barang=['#F4A460', '#E8720C'],
         thn=sel_thn, bln=sel_bln, prev_thn=prev_thn, prev_bln=prev_bln
     )
+
+    st.markdown("---")
+
+    with st.expander("📋 Lihat Data Detail Mentah", expanded=False):
+        moda_detail = st.radio("Moda", ["Transportasi Laut", "Transportasi Udara"], horizontal=True, key="detail_moda")
+        table_detail = "transportasi_laut" if moda_detail == "Transportasi Laut" else "transportasi_udara"
+        df_detail = load_period_data(engine, table_detail, sel_thn, sel_bln)
+        st.dataframe(df_detail, use_container_width=True)
