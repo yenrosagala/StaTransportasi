@@ -363,6 +363,47 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
             
     return None, "Failed"
 
+def get_or_generate_narrative(report_type, period_key, data_context):
+    conn = get_engine().raw_connection() # Menggunakan koneksi SQLAlchemy/PostgreSQL yang sesuai
+    cursor = conn.cursor()
+    
+    # 1. Cek apakah narasi sudah ada di database menggunakan parameter placeholder %s / parameterized query
+    cursor.execute(
+        "SELECT narrative_text FROM ai_narratives WHERE report_type = %s AND period_key = %s",
+        (report_type, period_key)
+    )
+    result = cursor.fetchone()
+    
+    if result:
+        # Jika ada, kembalikan data dari database (Tidak hit AI / No Regenerate)
+        cursor.close()
+        conn.close()
+        return result[0], "Loaded from Database (Cache)"
+    
+    # 2. Jika belum ada, panggil API AI untuk generate narasi baru
+    new_narrative = call_ai_api(data_context) 
+    
+    # 3. Simpan hasil generate AI ke database dengan UPSERT PostgreSQL
+    try:
+        cursor.execute(
+            """
+            INSERT INTO ai_narratives (report_type, period_key, narrative_text)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (report_type, period_key) 
+            DO UPDATE SET narrative_text = EXCLUDED.narrative_text, created_at = CURRENT_TIMESTAMP
+            """,
+            (report_type, period_key, new_narrative)
+        )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        print(f"Gagal menyimpan ke database: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+        
+    return new_narrative, "Generated Fresh by AI & Saved"    
+
 
 def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln, thn, prev_bln, prev_thn,
                                col_prev, col_curr, col_cum_prev, col_cum_curr, prov=""):
@@ -664,11 +705,20 @@ def render_tables_and_narratives(all_collected_data):
         with h1:
             st.markdown(f"**📝 Executive Summary — {item['label']}**")
         with h2:
-            if st.button("🔄 Regenerasi", key=f"regen_report_{item['table_no']}", width='stretch'):
+            # Tambahkan tombol regenerate di sini
+            if st.button("🔄 Regenerasi", key=func_key := f"regen_report_{item['table_no']}", width='stretch'):
+                # Definisikan report_type dan period_key sesuai data tabel yang sedang diregenerasi
+                report_type = f"{item['prov']}_{current_moda}_{item['label']}"
+                period_key = f"{item['bln']}_{item['thn']}"
+                
+                # Hapus data lama dari database agar sistem membuat narasi baru yang fresh
+                delete_narrative_from_db(report_type, period_key)
+                
+                # Opsional: bersihkan juga session state jika masih digunakan
                 ensure_narasi_cache()
                 cache_key = get_cache_key(item['prov'], current_moda, item['label'], item['bln'], item['thn'])
                 st.session_state["narasi_cache"].pop(cache_key, None)
-                st.session_state["narasi_cache"].pop(cache_key + "|fallback", None)
+                
                 st.rerun()
 
         with st.spinner(f"Menyusun Executive Summary untuk {item['label']}..."):
@@ -720,6 +770,20 @@ def render_tables_and_narratives(all_collected_data):
         item['p2'] = p2_text
 
         st.markdown("---")
+
+def delete_narrative_from_db(report_type, period_key):
+    try:
+        conn = get_engine().raw_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM ai_narratives WHERE report_type = %s AND period_key = %s",
+            (report_type, period_key)
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print(f"Gagal menghapus cache database: {e}")
 
 def show_report_page():
     st.title("📋 Laporan Komparatif Strategis")
