@@ -387,7 +387,7 @@ def render_section_narrative(moda_nama, table, engine, cols_penumpang, cols_bara
     with h2:
         # Tombol Regenerasi hanya di-enable jika admin sudah login
         if st.session_state.get('admin_logged_in', False):
-            if st.button("🔄 Regenerasi", key=f"regen_{table}_{thn}_{bln}", use_container_width=True):
+            if st.button("🔄 Regenerasi", key=f"regen_{table}_{thn}_{bln}", width='stretch'):
                 try:
                     with engine.raw_connection() as conn:
                         with conn.cursor() as cursor:
@@ -434,7 +434,7 @@ def show_section(engine, table, moda_title, icon, header_color,
             colors_penumpang[0], colors_penumpang[1],
             "PENUMPANG DATANG DAN BERANGKAT"
         )
-        st.plotly_chart(fig1, use_container_width=True)
+        st.plotly_chart(fig1, width='stretch')
     with c2:
         fig2 = build_stacked_bar(
             df_curr, cols_barang[0], cols_barang[1],
@@ -442,16 +442,16 @@ def show_section(engine, table, moda_title, icon, header_color,
             colors_barang[0], colors_barang[1],
             "MUAT DAN BONGKAR BARANG"
         )
-        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig2, width='stretch')
 
     periode_label = f"{MONTH_ABBR[prev_bln]}-{MONTH_ABBR[bln]} {thn}"
     t1, t2 = st.columns(2)
     with t1:
         tbl1 = build_growth_table(df_curr, df_prev, cols_penumpang, labels_penumpang, periode_label)
-        st.dataframe(style_growth_table(tbl1, header_color), use_container_width=True)
+        st.dataframe(style_growth_table(tbl1, header_color), width='stretch')
     with t2:
         tbl2 = build_growth_table(df_curr, df_prev, cols_barang, labels_barang, periode_label)
-        st.dataframe(style_growth_table(tbl2, "#C0392B" if header_color != "#C0392B" else "#7B241C"), use_container_width=True)
+        st.dataframe(style_growth_table(tbl2, "#C0392B" if header_color != "#C0392B" else "#7B241C"), width='stretch')
 
     satuan_barang = "ton" if moda_title == "Laut" else "kg"
     render_section_narrative(
@@ -514,4 +514,4 @@ def show_dashboard_page():
         moda_detail = st.radio("Moda", ["Transportasi Laut", "Transportasi Udara"], horizontal=True, key="detail_moda")
         table_detail = "transportasi_laut" if moda_detail == "Transportasi Laut" else "transportasi_udara"
         df_detail = load_period_data(engine, table_detail, sel_thn, sel_bln)
-        st.dataframe(df_detail, use_container_width=True)
+        st.dataframe(df_detail, width='stretch')
