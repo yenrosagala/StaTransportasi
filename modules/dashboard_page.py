@@ -400,16 +400,18 @@ def render_section_narrative(moda_nama, table, engine, cols_penumpang, cols_bara
     with h1:
         st.markdown(f"**📝 Ringkasan Naratif** *(Sumber: {source})*")
     with h2:
-        if st.button("🔄 Regenerasi", key=f"regen_{cache_key}", width='stretch'):
-            # Hapus kunci cache khusus ini agar dipaksa membuat narasi baru dari API/Fallback
-            if cache_key in cache:
-                del cache[cache_key]
-            # Panggil ulang untuk mengisi cache dengan data baru
-            _generate_and_cache_section_narrative(
-                cache, cache_key, moda_nama, table, engine, cols_penumpang, cols_barang, satuan_barang,
-                df_curr, df_prev, thn, bln, prev_thn, prev_bln
-            )
-            st.rerun()
+        # Batasi tombol regenerasi hanya untuk role admin
+        if st.session_state.get("role") == "admin":
+            if st.button("🔄 Regenerasi", key=f"regen_{cache_key}", width='stretch'):
+                # Hapus kunci cache khusus ini agar dipaksa membuat narasi baru dari API/Fallback
+                if cache_key in cache:
+                    del cache[cache_key]
+                # Panggil ulang untuk mengisi cache dengan data baru
+                _generate_and_cache_section_narrative(
+                    cache, cache_key, moda_nama, table, engine, cols_penumpang, cols_barang, satuan_barang,
+                    df_curr, df_prev, thn, bln, prev_thn, prev_bln
+                )
+                st.rerun()
 
     st.markdown(para1)
     if para2:
