@@ -705,12 +705,14 @@ def render_tables_and_narratives(all_collected_data):
         with h1:
             st.markdown(f"**📝 Executive Summary — {item['label']}**")
         with h2:
-            if st.button("🔄 Regenerasi", key=f"regen_report_{item['table_no']}", width='stretch'):
-                ensure_narasi_cache()
-                cache_key = get_cache_key(item['prov'], current_moda, item['label'], item['bln'], item['thn'])
-                st.session_state["narasi_cache"].pop(cache_key, None)
-                st.session_state["narasi_cache"].pop(cache_key + "|fallback", None)
-                st.rerun()
+            # Batasi tombol regenerasi hanya untuk role admin
+            if st.session_state.get("role") == "admin":
+                if st.button("🔄 Regenerasi", key=f"regen_report_{item['table_no']}", width='stretch'):
+                    ensure_narasi_cache()
+                    cache_key = get_cache_key(item['prov'], current_moda, item['label'], item['bln'], item['thn'])
+                    st.session_state["narasi_cache"].pop(cache_key, None)
+                    st.session_state["narasi_cache"].pop(cache_key + "|fallback", None)
+                    st.rerun()
         with st.spinner(f"Menyusun Executive Summary untuk {item['label']}..."):
             text_final, source = generate_single_narrative_ai(
                 item['report_display_brs'].reset_index(), 
