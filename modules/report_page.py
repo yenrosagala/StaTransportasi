@@ -112,7 +112,6 @@ def build_brs_display_table(report_flat, prov, moda):
     df = df.reset_index()
     row_col = df.columns[0]
     
-    # Normalisasi nama entitas
     df[row_col] = df[row_col].apply(lambda x: normalisasi_entitas(x, moda))
     df = df.groupby(row_col).sum(min_count=1).reset_index() 
     
@@ -123,20 +122,17 @@ def build_brs_display_table(report_flat, prov, moda):
         config = HIERARKI_BRS[prov][moda]
         df['match_key'] = df[row_col].astype(str).str.lower()
         
-        # --- PERBAIKAN: Ikuti urutan sesuai list hierarki, bukan terurut abjad ---
         for entitas_utama in config.get("utama", []):
             match_row = df[df['match_key'] == str(entitas_utama).lower()]
             if not match_row.empty:
                 potongan.append(match_row.drop(columns=['match_key']))
                 
-        # Subtotal Utama jika ada list lainnya
         if len(config.get("lainnya", [])) > 0 and potongan:
             df_utama_gabung = pd.concat(potongan, ignore_index=True)
             sub_utama = pd.DataFrame(df_utama_gabung[raw_cols].sum()).T
             sub_utama[row_col] = config["label_subtotal"]
             potongan.append(sub_utama)
             
-        # Separator (Bandara/Pelabuhan Lainnya)
         if len(config.get("lainnya", [])) > 0:
             separator = pd.DataFrame([{row_col: config["teks_separator"]}])
             for c in df.columns: 
@@ -149,8 +145,6 @@ def build_brs_display_table(report_flat, prov, moda):
                 if not match_row_lain.empty:
                     potongan.append(match_row_lain.drop(columns=['match_key']))
             
-            # Subtotal Lainnya
-            # Ambil elemen yang masuk kategori lainnya untuk dijumlahkan
             lainnya_lower = [str(x).lower() for x in config["lainnya"]]
             df_lain_gabung = df[df['match_key'].isin(lainnya_lower)]
             if not df_lain_gabung.empty:
@@ -158,7 +152,6 @@ def build_brs_display_table(report_flat, prov, moda):
                 sub_lain[row_col] = config["label_subtotal"] + " " 
                 potongan.append(sub_lain)
         
-        # Jika ada entitas di database yang tidak terdaftar di hierarki, masukkan di bagian akhir
         terdaftar = [str(x).lower() for x in config.get("utama", []) + config.get("lainnya", [])]
         df_sisa = df[~df['match_key'].isin(terdaftar)].copy()
         if not df_sisa.empty:
@@ -180,7 +173,6 @@ def build_brs_display_table(report_flat, prov, moda):
         
     res = pd.concat(potongan, ignore_index=True).set_index(row_col) if potongan else df.set_index(row_col)
     
-    # Hitung kembali persentase M-to-M dan Y-on-Y untuk setiap baris (termasuk subtotal dan total)
     col_prev, col_curr = raw_cols[0], raw_cols[1]
     col_cum_prev, col_cum_curr = raw_cols[2], raw_cols[3]
     
@@ -255,13 +247,6 @@ def _arah_dinamis(pct):
     elif pct < 0: return random.choice(["terkoreksi", "turun", "mengalami penurunan", "menyusut"])
     return "stabil"
 
-def ensure_narasi_cache():
-    if "narasi_cache" not in st.session_state:
-        st.session_state["narasi_cache"] = {}
-
-def get_cache_key(prov, moda, col_target, bln, thn):
-    return f"{prov}|{moda}|{col_target}|{bln}|{thn}"
-
 def get_gemini_api_keys():
     keys = []
     def add_value(v):
@@ -300,13 +285,51 @@ def parse_two_paragraphs(text):
     if len(parts) == 1: return parts[0], ""
     return None, None
 
+# ==============================================================================
+# DATABASE RETRIEVE & SAVE HELPERS
+# ==============================================================================
+def get_db_narrative(report_type, period_key):
+    try:
+        engine = get_engine()
+        with engine.raw_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT narrative_text FROM ai_narratives WHERE report_type = %s AND period_key = %s",
+                    (report_type, period_key)
+                )
+                result = cursor.fetchone()
+                if result:
+                    return result[0]
+    except Exception as e:
+        logger.warning("Gagal mengambil narasi dari database: %s", e)
+    return None
+
+def save_db_narrative(report_type, period_key, narrative_text):
+    try:
+        engine = get_engine()
+        with engine.raw_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO ai_narratives (report_type, period_key, narrative_text, created_at)
+                    VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+                    ON CONFLICT (report_type, period_key) 
+                    DO UPDATE SET narrative_text = EXCLUDED.narrative_text, created_at = CURRENT_TIMESTAMP
+                    """,
+                    (report_type, period_key, narrative_text)
+                )
+                conn.commit()
+    except Exception as e:
+        logger.error("Gagal menyimpan narasi ke database: %s", e)
+
 def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln, prev_thn):
-    cache_key = get_cache_key(prov, moda, label, bln, thn)
-    ensure_narasi_cache()
-    cache = st.session_state["narasi_cache"]
+    report_type = f"report_{moda}_{label}"
+    period_key = f"{prov}|{bln}|{thn}"
     
-    if cache_key in cache:
-        return cache[cache_key], "Cache"
+    # 1. Cek database terlebih dahulu (Retrieve)
+    db_text = get_db_narrative(report_type, period_key)
+    if db_text:
+        return db_text, "Database (Cached)"
 
     api_keys = get_gemini_api_keys()
     if not api_keys:
@@ -354,56 +377,15 @@ def generate_single_narrative_ai(df_flat, label, prov, moda, bln, thn, prev_bln,
                 raw_text = getattr(response, "text", None)
                 if raw_text and str(raw_text).strip():
                     text_clean = str(raw_text).strip()
-                    cache[cache_key] = text_clean
+                    # Simpan otomatis ke database saat pertama kali di-generate
+                    save_db_narrative(report_type, period_key, text_clean)
                     st.session_state["gemini_key_index"] = (current_idx + 1) % num_keys
                     return text_clean, f"Gemini AI ({model_name})"
             except Exception as e:
-                logger.warning("Gagal pada Report dengan Key ke-%d menggunakan model %s: %s. Mencoba opsi model/key lain...", current_idx + 1, model_name, e)
+                logger.warning("Gagal pada Report dengan Key ke-%d menggunakan model %s: %s...", current_idx + 1, model_name, e)
                 continue
             
     return None, "Failed"
-
-def get_or_generate_narrative(report_type, period_key, data_context):
-    conn = get_engine().raw_connection() # Menggunakan koneksi SQLAlchemy/PostgreSQL yang sesuai
-    cursor = conn.cursor()
-    
-    # 1. Cek apakah narasi sudah ada di database menggunakan parameter placeholder %s / parameterized query
-    cursor.execute(
-        "SELECT narrative_text FROM ai_narratives WHERE report_type = %s AND period_key = %s",
-        (report_type, period_key)
-    )
-    result = cursor.fetchone()
-    
-    if result:
-        # Jika ada, kembalikan data dari database (Tidak hit AI / No Regenerate)
-        cursor.close()
-        conn.close()
-        return result[0], "Loaded from Database (Cache)"
-    
-    # 2. Jika belum ada, panggil API AI untuk generate narasi baru
-    new_narrative = call_ai_api(data_context) 
-    
-    # 3. Simpan hasil generate AI ke database dengan UPSERT PostgreSQL
-    try:
-        cursor.execute(
-            """
-            INSERT INTO ai_narratives (report_type, period_key, narrative_text)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (report_type, period_key) 
-            DO UPDATE SET narrative_text = EXCLUDED.narrative_text, created_at = CURRENT_TIMESTAMP
-            """,
-            (report_type, period_key, new_narrative)
-        )
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        print(f"Gagal menyimpan ke database: {e}")
-    finally:
-        cursor.close()
-        conn.close()
-        
-    return new_narrative, "Generated Fresh by AI & Saved"    
-
 
 def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln, thn, prev_bln, prev_thn,
                                col_prev, col_curr, col_cum_prev, col_cum_curr, prov=""):
@@ -437,27 +419,8 @@ def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln
             f"mencapai volume total {fmt(total_curr)} {meta['satuan']} selama bulan {bln} {thn}. "
             f"Realisasi ini {_arah_dinamis(total_mtm)} sebesar {abs_mtm} persen secara month-to-month (M-to-M) "
             f"dibandingkan kondisi bulan {prev_bln} {prev_thn} yang mencatatkan angka {fmt(total_prev)} {meta['satuan']}."
-        ),
-        (
-            f"Pada periode {bln} {thn}, aggregate volume {subject.lower()} untuk Provinsi {prov} "
-            f"berada pada level {fmt(total_curr)} {meta['satuan']}. "
-            f"Perkembangan indikator ini mengindikasikan adanya pergerakan yang {_arah_dinamis(total_mtm)} "
-            f"dengan deviasi sebesar {abs_mtm} persen dari performa bulan sebelumnya ({prev_bln} {prev_thn})."
-        ),
-        (
-            f"Meninjau kinerja operasional bulanan, volume {subject.lower()} di Provinsi {prov} pada {bln} {thn} "
-            f"tercatat sebesar {fmt(total_curr)} {meta['satuan']}. Capaian tersebut memperlihatkan tren yang {_arah_dinamis(total_mtm)} "
-            f"sebesar {abs_mtm} persen jika disandingkan dengan posisi bulan {prev_bln} {prev_thn} "
-            f"yang sebelumnya membukukan {fmt(total_prev)} {meta['satuan']}."
-        ),
-        (
-            f"Perkembangan arus {subject.lower()} di Provinsi {prov} pada bulan {bln} {thn} "
-            f"menunjukkan angka total mencapai {fmt(total_curr)} {meta['satuan']}. "
-            f"Secara bulanan, parameter ini {_arah_dinamis(total_mtm)} dengan persentase perubahan di kisaran {abs_mtm} persen "
-            f"terhadap catatan volume pada periode pembanding bulan {prev_bln} {prev_thn}."
         )
     ]
-
     p2_options = [
         (
             f"Secara kumulatif (Year-to-Date hingga {bln} {thn}), akumulasi realisasi {subject.lower()} "
@@ -469,34 +432,11 @@ def generate_narrative_fallback(report_flat, col_target, moda, region_label, bln
         (
             f"Meninjau kinerja tahun berjalan hingga bulan {bln} {thn}, total realisasi kumulatif tercatat sebesar {fmt(total_cum_curr)} "
             f"{meta['satuan']}. Dibandingkan dengan capaian kumulatif Januari–{bln} tahun sebelumnya ({fmt(total_cum_prev)} {meta['satuan']}), "
-            f"indikator ini {_arah_dinamis(total_yoy)} di level {abs_yoy} persen secara Y-on-Y, yang menggambarkan daya tahan "
-            f"serta dinamika pemulihan konektivitas wilayah."
-        ),
-        (
-            f"Ditinjau dari perspektif kumulatif tahunan (Januari–{bln} {thn}), volume agregat {subject.lower()} "
-            f"mencapai {fmt(total_cum_curr)} {meta['satuan']}. Performa ini menunjukkan kurva laju yang {_arah_dinamis(total_yoy)} "
-            f"sebesar {abs_yoy} persen Y-on-Y terhadap baseline operasional tahun sebelumnya, memberi gambaran optimisme "
-            f"bagi keberlanjutan moda transportasi di Provinsi {prov}."
-        ),
-        (
-            f"Lebih lanjut, analisis secara kumulatif dari Januari hingga {bln} {thn} menunjukkan total volume penyerapan "
-            f"sebesar {fmt(total_cum_curr)} {meta['satuan']}. Angka tersebut mencerminkan dinamika yang {_arah_dinamis(total_yoy)} "
-            f"sebesar {abs_yoy} persen secara tahunan (Y-on-Y) apabila dikontraskan dengan capaian periode yang sama tahun lalu "
-            f"sebesar {fmt(total_cum_prev)} {meta['satuan']}."
-        ),
-        (
-            f"Dalam rentang waktu tahun berjalan (Year-to-Date) sampai dengan {bln} {thn}, akumulasi arus {subject.lower()} "
-            f"terakumulasi pada angka {fmt(total_cum_curr)} {meta['satuan']}. Kinerja makro ini {_arah_dinamis(total_yoy)} "
-            f"di level {abs_yoy} persen secara Year-on-Year, menandakan adanya penyesuaian struktural dan pola mobilitas baru "
-            f"di kawasan regional."
+            f"indikator ini {_arah_dinamis(total_yoy)} di level {abs_yoy} persen secara Y-on-Y."
         )
     ]
+    return random.choice(p1_options), random.choice(p2_options)
 
-    para1 = random.choice(p1_options)
-    para2 = random.choice(p2_options)
-    
-    return para1, para2
-                            
 def create_complete_master_word_report(prov, thn, bln, all_report_data):
     doc = docx.Document()
     doc.add_heading(f"Laporan Komprehensif Perkembangan Transportasi Provinsi {prov} - {bln} {thn}", level=1)
@@ -553,29 +493,16 @@ def create_complete_master_word_report(prov, thn, bln, all_report_data):
         except Exception:
             pass
 
-        seen_row_contents = set()
-
         for i, row_data in enumerate(df_to_export.values):
             row_cells = table.rows[i + 2].cells
             first_col_val = str(row_data[0]) if not pd.isna(row_data[0]) else ""
             is_separator_row = "lainnya" in first_col_val.lower()
-            
-            row_signature = tuple(str(v) for v in row_data)
-            if not is_separator_row and row_signature in seen_row_contents and ("subtotal" in first_col_val.lower() or "total" in first_col_val.lower()):
-                row_data_cleaned = [""] * len(row_data)
-            else:
-                seen_row_contents.add(row_signature)
-                row_data_cleaned = row_data
 
-            for j, val in enumerate(row_data_cleaned):
+            for j, val in enumerate(row_data):
                 if j == 0:
                     row_cells[j].text = str(val) if not pd.isna(val) else ""
                 else:
-                    if is_separator_row:
-                        row_cells[j].text = ""
-                    else:
-                        row_cells[j].text = format_id_number(val, decimals=2) if val != "" else ""
-            
+                    row_cells[j].text = "" if is_separator_row else (format_id_number(val, decimals=2) if val != "" else "")
                          
         doc.add_paragraph()
         if p2:
@@ -589,7 +516,6 @@ def create_complete_master_word_report(prov, thn, bln, all_report_data):
     return file_stream
 
 def prepare_table_item(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, label, row_col, thn, bln, prev_bln, prev_thn, table_no=None, prov=None, moda=None):
-    # Konversi dari Kg ke Ton jika Provinsi Papua Tengah dan Moda Transportasi Udara
     divisor = 1.0
     if prov == "Papua Tengah" and moda == "Transportasi Udara" and "kg" in col_target.lower():
         divisor = 1000.0
@@ -664,23 +590,11 @@ def prepare_table_item(df_curr, df_prev, df_cum_curr, df_cum_prev, col_target, l
     styled_df = style_brs_hierarchy(report_display.style)
 
     return {
-        'moda': moda,
-        'table_no': table_no,
-        'label': label,
-        'col_target': col_target,
-        'prov': prov,
-        'bln': bln,
-        'thn': thn,
-        'prev_bln': prev_bln,
-        'prev_thn': prev_thn,
-        'col_prev': col_prev,
-        'col_curr': col_curr,
-        'col_cum_prev': col_cum_prev,
-        'col_cum_curr': col_cum_curr,
-        'report_flat': report_flat,
-        'report_display_brs': report_display_brs,
-        'df_display': report_display,
-        'styled_df': styled_df,
+        'moda': moda, 'table_no': table_no, 'label': label, 'col_target': col_target,
+        'prov': prov, 'bln': bln, 'thn': thn, 'prev_bln': prev_bln, 'prev_thn': prev_thn,
+        'col_prev': col_prev, 'col_curr': col_curr, 'col_cum_prev': col_cum_prev, 'col_cum_curr': col_cum_curr,
+        'report_flat': report_flat, 'report_display_brs': report_display_brs,
+        'df_display': report_display, 'styled_df': styled_df,
     }
 
 def render_tables_and_narratives(all_collected_data):
@@ -708,11 +622,23 @@ def render_tables_and_narratives(all_collected_data):
             # Batasi tombol regenerasi hanya untuk role admin
             if st.session_state.get("role") == "admin":
                 if st.button("🔄 Regenerasi", key=f"regen_report_{item['table_no']}", width='stretch'):
-                    ensure_narasi_cache()
-                    cache_key = get_cache_key(item['prov'], current_moda, item['label'], item['bln'], item['thn'])
-                    st.session_state["narasi_cache"].pop(cache_key, None)
-                    st.session_state["narasi_cache"].pop(cache_key + "|fallback", None)
+                    report_type = f"report_{current_moda}_{item['label']}"
+                    period_key = f"{item['prov']}|{item['bln']}|{item['thn']}"
+                    
+                    # Hapus dari database agar dipaksa generate ulang oleh AI
+                    try:
+                        engine = get_engine()
+                        with engine.raw_connection() as conn:
+                            with conn.cursor() as cursor:
+                                cursor.execute(
+                                    "DELETE FROM ai_narratives WHERE report_type = %s AND period_key = %s",
+                                    (report_type, period_key)
+                                )
+                                conn.commit()
+                    except Exception as e:
+                        logger.error("Gagal menghapus cache database saat regenerasi: %s", e)
                     st.rerun()
+
         with st.spinner(f"Menyusun Executive Summary untuk {item['label']}..."):
             text_final, source = generate_single_narrative_ai(
                 item['report_display_brs'].reset_index(), 
@@ -727,33 +653,17 @@ def render_tables_and_narratives(all_collected_data):
 
         if text_final:
             p1, p2 = parse_two_paragraphs(text_final)
-            p1_text = f"*(Executive Summary - Gemini AI [{source}])*\n\n{p1}" if p1 else ""
+            p1_text = f"*(Executive Summary - [{source}])*\n\n{p1}" if p1 else ""
             p2_text = p2 if p2 else ""
         else:
-            ensure_narasi_cache()
-            fallback_cache_key = get_cache_key(item['prov'], current_moda, item['label'], item['bln'], item['thn']) + "|fallback"
-            cache = st.session_state["narasi_cache"]
-            if fallback_cache_key in cache:
-                p1_text, p2_text = cache[fallback_cache_key]
-            else:
-                p1, p2 = generate_narrative_fallback(
-                    report_flat=item['report_flat'],
-                    col_target=item['col_target'],
-                    moda=current_moda,
-                    region_label=region_label,
-                    bln=item['bln'],
-                    thn=item['thn'],
-                    prev_bln=item['prev_bln'],
-                    prev_thn=item['prev_thn'],
-                    col_prev=item['col_prev'],
-                    col_curr=item['col_curr'],
-                    col_cum_prev=item['col_cum_prev'],
-                    col_cum_curr=item['col_cum_curr'],
-                    prov=item['prov']
-                )
-                p1_text = f"*(Executive Summary - Sistem Fallback)*\n\n{p1}"
-                p2_text = p2
-                cache[fallback_cache_key] = (p1_text, p2_text)
+            p1, p2 = generate_narrative_fallback(
+                report_flat=item['report_flat'], col_target=item['col_target'], moda=current_moda,
+                region_label=region_label, bln=item['bln'], thn=item['thn'], prev_bln=item['prev_bln'],
+                prev_thn=item['prev_thn'], col_prev=item['col_prev'], col_curr=item['col_curr'],
+                col_cum_prev=item['col_cum_prev'], col_cum_curr=item['col_cum_curr'], prov=item['prov']
+            )
+            p1_text = f"*(Executive Summary - Sistem Fallback)*\n\n{p1}"
+            p2_text = p2
 
         if p1_text: st.markdown(p1_text)
         if p2_text: st.markdown(p2_text)
@@ -762,20 +672,6 @@ def render_tables_and_narratives(all_collected_data):
         item['p2'] = p2_text
 
         st.markdown("---")
-
-def delete_narrative_from_db(report_type, period_key):
-    try:
-        conn = get_engine().raw_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "DELETE FROM ai_narratives WHERE report_type = %s AND period_key = %s",
-            (report_type, period_key)
-        )
-        conn.commit()
-        cursor.close()
-        conn.close()
-    except Exception as e:
-        print(f"Gagal menghapus cache database: {e}")
 
 def show_report_page():
     st.title("📋 Laporan Komparatif Strategis")
@@ -792,18 +688,11 @@ def show_report_page():
         moda_udara = "Transportasi Udara"
         df_cu, df_pr, df_cc, df_cp, p_bln, p_thn = get_comparison_data(prov, thn, bln, moda_udara)
         if not df_cu.empty:
-            # Penyesuaian Label untuk Papua Tengah
-            if prov == "Papua Tengah":
-                targets_udara = [
-                    ('penumpang_datang', 'Penumpang Datang'), ('penumpang_berangkat', 'Penumpang Berangkat'),
-                    ('barang_bongkar_kg', 'Barang Bongkar (Ton)'), ('barang_muat_kg', 'Barang Muat (Ton)')
-                ]
-            else:
-                targets_udara = [
-                    ('penumpang_datang', 'Penumpang Datang'), ('penumpang_berangkat', 'Penumpang Berangkat'),
-                    ('barang_bongkar_kg', 'Barang Bongkar (Kg)'), ('barang_muat_kg', 'Barang Muat (Kg)')
-                ]
-
+            targets_udara = [
+                ('penumpang_datang', 'Penumpang Datang'), ('penumpang_berangkat', 'Penumpang Berangkat'),
+                ('barang_bongkar_kg', 'Barang Bongkar (Ton)' if prov == "Papua Tengah" else 'Barang Bongkar (Kg)'), 
+                ('barang_muat_kg', 'Barang Muat (Ton)' if prov == "Papua Tengah" else 'Barang Muat (Kg)')
+            ]
             for col, label in targets_udara:
                 item = prepare_table_item(df_cu, df_pr, df_cc, df_cp, col, label, 'nama_bandara', thn, bln, p_bln, p_thn, table_no=global_table_counter, prov=prov, moda=moda_udara)
                 all_collected_data.append(item)
