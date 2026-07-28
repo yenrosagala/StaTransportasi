@@ -705,22 +705,12 @@ def render_tables_and_narratives(all_collected_data):
         with h1:
             st.markdown(f"**📝 Executive Summary — {item['label']}**")
         with h2:
-            # Tambahkan tombol regenerate di sini
-            if st.button("🔄 Regenerasi", key=func_key := f"regen_report_{item['table_no']}", width='stretch'):
-                # Definisikan report_type dan period_key sesuai data tabel yang sedang diregenerasi
-                report_type = f"{item['prov']}_{current_moda}_{item['label']}"
-                period_key = f"{item['bln']}_{item['thn']}"
-                
-                # Hapus data lama dari database agar sistem membuat narasi baru yang fresh
-                delete_narrative_from_db(report_type, period_key)
-                
-                # Opsional: bersihkan juga session state jika masih digunakan
+            if st.button("🔄 Regenerasi", key=f"regen_report_{item['table_no']}", width='stretch'):
                 ensure_narasi_cache()
                 cache_key = get_cache_key(item['prov'], current_moda, item['label'], item['bln'], item['thn'])
                 st.session_state["narasi_cache"].pop(cache_key, None)
-                
+                st.session_state["narasi_cache"].pop(cache_key + "|fallback", None)
                 st.rerun()
-
         with st.spinner(f"Menyusun Executive Summary untuk {item['label']}..."):
             text_final, source = generate_single_narrative_ai(
                 item['report_display_brs'].reset_index(), 
