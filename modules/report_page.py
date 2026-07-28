@@ -681,39 +681,43 @@ def show_report_page():
     with c2: thn = st.selectbox("Tahun", ['2024', '2025', '2026'], index=1)
     with c3: bln = st.selectbox("Bulan", list(MONTH_MAP.keys()))
 
-    if st.button("Generate Semua Laporan (Udara & Laut)"):
-        all_collected_data = []
-        global_table_counter = 1  
-        
-        moda_udara = "Transportasi Udara"
-        df_cu, df_pr, df_cc, df_cp, p_bln, p_thn = get_comparison_data(prov, thn, bln, moda_udara)
-        if not df_cu.empty:
-            targets_udara = [
-                ('penumpang_datang', 'Penumpang Datang'), ('penumpang_berangkat', 'Penumpang Berangkat'),
-                ('barang_bongkar_kg', 'Barang Bongkar (Ton)' if prov == "Papua Tengah" else 'Barang Bongkar (Kg)'), 
-                ('barang_muat_kg', 'Barang Muat (Ton)' if prov == "Papua Tengah" else 'Barang Muat (Kg)')
-            ]
-            for col, label in targets_udara:
-                item = prepare_table_item(df_cu, df_pr, df_cc, df_cp, col, label, 'nama_bandara', thn, bln, p_bln, p_thn, table_no=global_table_counter, prov=prov, moda=moda_udara)
-                all_collected_data.append(item)
-                global_table_counter += 1
+    # Batasi tombol "Generate Semua Laporan" hanya untuk role admin
+    if st.session_state.get("role") == "admin":
+        if st.button("Generate Semua Laporan (Udara & Laut)"):
+            all_collected_data = []
+            global_table_counter = 1  
+            
+            moda_udara = "Transportasi Udara"
+            df_cu, df_pr, df_cc, df_cp, p_bln, p_thn = get_comparison_data(prov, thn, bln, moda_udara)
+            if not df_cu.empty:
+                targets_udara = [
+                    ('penumpang_datang', 'Penumpang Datang'), ('penumpang_berangkat', 'Penumpang Berangkat'),
+                    ('barang_bongkar_kg', 'Barang Bongkar (Ton)' if prov == "Papua Tengah" else 'Barang Bongkar (Kg)'), 
+                    ('barang_muat_kg', 'Barang Muat (Ton)' if prov == "Papua Tengah" else 'Barang Muat (Kg)')
+                ]
+                for col, label in targets_udara:
+                    item = prepare_table_item(df_cu, df_pr, df_cc, df_cp, col, label, 'nama_bandara', thn, bln, p_bln, p_thn, table_no=global_table_counter, prov=prov, moda=moda_udara)
+                    all_collected_data.append(item)
+                    global_table_counter += 1
 
-        moda_laut = "Transportasi Laut"
-        df_cu_l, df_pr_l, df_cc_l, df_cp_l, p_bln_l, p_thn_l = get_comparison_data(prov, thn, bln, moda_laut)
-        if not df_cu_l.empty:
-            row_col_laut = 'nama_kabkota' if prov == "Papua Tengah" else 'nama_pelabuhan'
-            targets_laut = [
-                ('dn_penumpang_turun', 'Penumpang Turun'), ('dn_penumpang_naik', 'Penumpang Naik'),
-                ('dn_bongkar_barang_ton', 'Barang Bongkar (Ton)'), ('dn_muat_barang_ton', 'Barang Muat (Ton)')
-            ]
-            for col, label in targets_laut:
-                item = prepare_table_item(df_cu_l, df_pr_l, df_cc_l, df_cp_l, col, label, row_col_laut, thn, bln, p_bln_l, p_thn_l, table_no=global_table_counter, prov=prov, moda=moda_laut)
-                all_collected_data.append(item)
-                global_table_counter += 1
+            moda_laut = "Transportasi Laut"
+            df_cu_l, df_pr_l, df_cc_l, df_cp_l, p_bln_l, p_thn_l = get_comparison_data(prov, thn, bln, moda_laut)
+            if not df_cu_l.empty:
+                row_col_laut = 'nama_kabkota' if prov == "Papua Tengah" else 'nama_pelabuhan'
+                targets_laut = [
+                    ('dn_penumpang_turun', 'Penumpang Turun'), ('dn_penumpang_naik', 'Penumpang Naik'),
+                    ('dn_bongkar_barang_ton', 'Barang Bongkar (Ton)'), ('dn_muat_barang_ton', 'Barang Muat (Ton)')
+                ]
+                for col, label in targets_laut:
+                    item = prepare_table_item(df_cu_l, df_pr_l, df_cc_l, df_cp_l, col, label, row_col_laut, thn, bln, p_bln_l, p_thn_l, table_no=global_table_counter, prov=prov, moda=moda_laut)
+                    all_collected_data.append(item)
+                    global_table_counter += 1
 
-        if all_collected_data:
-            st.session_state['report_all_data'] = all_collected_data
-            st.session_state['report_meta'] = {'prov': prov, 'thn': thn, 'bln': bln}
+            if all_collected_data:
+                st.session_state['report_all_data'] = all_collected_data
+                st.session_state['report_meta'] = {'prov': prov, 'thn': thn, 'bln': bln}
+    else:
+        st.info("ℹ️ Tombol generate laporan hanya tersedia untuk akun dengan hak akses Administrator.")
 
     if st.session_state.get('report_all_data'):
         all_collected_data = st.session_state['report_all_data']
