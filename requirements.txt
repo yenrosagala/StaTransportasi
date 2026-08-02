@@ -10,3 +10,4 @@ matplotlib
 python-docx>=1.1.0
 psycopg2-binary
 openpyxl
+geopandas
