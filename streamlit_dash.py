@@ -86,7 +86,7 @@ etl_engine = get_etl()
 @st.cache_resource
 def get_transport_engine():
     # Uses the SAME database as the original R/Shiny "Monit Transportasi" app
-    return TransportasiEngine(db_path="Monit Transportasi/transportasi.db")
+    return TransportasiEngine(db_path="transportasi_papua.db")
 
 transport_engine = get_transport_engine()
 
