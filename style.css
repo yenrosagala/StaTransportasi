@@ -1,0 +1,175 @@
+/* ============================================================
+   PARIWISATA PAPUA — sidebar-nav dashboard, amber accent
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+:root{
+    --ink:        #0F172A;
+    --ink-dim:    #64748B;
+    --bg:         #F8FAFC;
+    --surface:    #FFFFFF;
+    --line:       #E2E8F0;
+    --primary:    #F59E0B;
+    --primary-dark:#D97706;
+    --positive:   #10B981;
+    --negative:   #EF4444;
+    --map-bg:     #0B0F14;
+}
+
+html, body, [class*="css"]{ font-family: 'Inter', sans-serif; }
+.stApp{ background: var(--bg); color: var(--ink); }
+[data-testid="stHeader"]{ background: transparent; }
+
+h1, h2, h3{ font-weight:700; letter-spacing:-0.01em; color: var(--ink); }
+
+/* ---------- sidebar ---------- */
+[data-testid="stSidebar"]{
+    background: var(--surface);
+    border-right: 1px solid var(--line);
+}
+.brand-block{ display:flex; align-items:center; gap:10px; margin-bottom:2px; }
+.brand-mark{
+    width:40px; height:40px; border-radius:10px;
+    background: var(--primary); color:#fff;
+    display:flex; align-items:center; justify-content:center; font-size:19px;
+}
+.sidebar-title{ font-size:16px; font-weight:800; color:var(--ink); margin:0; line-height:1.2; }
+.sidebar-subtitle{ font-size:12px; color:var(--ink-dim); margin:0; }
+
+[data-testid="stSidebar"] .stButton>button{
+    background: var(--primary) !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 10px !important;
+    font-weight: 700 !important;
+    font-size: 14px !important;
+    text-align: left !important;
+    padding: 12px 16px !important;
+    width: 100%;
+    box-shadow: none !important;
+}
+[data-testid="stSidebar"] .stButton>button:hover{ background: var(--primary-dark) !important; }
+[data-testid="stSidebar"] .stButton>button:focus{ outline:none !important; box-shadow:none !important; }
+
+.user-card{
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 13px;
+    color: var(--ink);
+}
+.user-card b{ color: var(--ink); }
+.status-dot{
+    display:inline-block; width:8px; height:8px; border-radius:50%;
+    background: var(--positive); margin-right:6px;
+}
+
+/* ---------- generic cards ---------- */
+.dashboard-card{
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 24px;
+    box-shadow: 0 1px 2px rgba(16,24,40,0.04);
+    margin-bottom: 20px;
+}
+.card-header{
+    display:flex; align-items:baseline; justify-content:space-between;
+    margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid var(--line);
+}
+.card-header h3{ margin:0; font-size:16px; font-weight:700; }
+.card-header span{ font-size:12px; color:var(--ink-dim); }
+
+/* ---------- search + filter bar ---------- */
+.search-bar .stTextInput input{
+    border-radius: 999px !important;
+    padding: 12px 20px !important;
+    border: 1px solid var(--line) !important;
+    background: var(--surface) !important;
+}
+.filter-pill [data-baseweb="select"] > div{
+    background: var(--ink) !important;
+    border-radius: 999px !important;
+    border: none !important;
+    color: #fff !important;
+}
+.filter-pill [data-baseweb="select"] span{ color: #fff !important; }
+.filter-pill svg{ fill:#fff !important; }
+
+/* ---------- page title ---------- */
+.hero-title{ font-size:26px; font-weight:800; color:var(--ink); margin:18px 0 16px 0; }
+
+/* ---------- province stat cards (matches original spec) ---------- */
+.province-card{
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 2px rgba(16,24,40,0.04);
+}
+.province-header{
+    background: var(--primary);
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    padding: 12px 16px;
+    text-align: center;
+    text-transform: uppercase;
+}
+.stat-row{
+    display:flex; justify-content:space-between; align-items:center;
+    padding: 14px 16px; border-bottom: 1px solid var(--line);
+}
+.stat-row:last-child{ border-bottom:none; }
+.stat-label{ font-size:12px; color:var(--ink-dim); display:block; margin-bottom:4px; }
+.stat-value{ font-size:19px; font-weight:700; color:var(--ink); }
+.stat-delta-na{ font-size:12px; color:var(--ink-dim); }
+
+.badge-up{
+    background-color: #ECFDF5; color: var(--positive);
+    border: 1px solid #A7F3D0;
+    padding: 3px 9px; border-radius: 999px; font-weight:700; font-size:12px;
+}
+.badge-down{
+    background-color: #FEF2F2; color: var(--negative);
+    border: 1px solid #FECACA;
+    padding: 3px 9px; border-radius: 999px; font-weight:700; font-size:12px;
+}
+
+/* ---------- dark map panel ---------- */
+.map-panel{
+    background: var(--map-bg);
+    border-radius: 18px;
+    padding: 16px 16px 4px 16px;
+    margin-bottom: 16px;
+}
+.map-panel-title{
+    color: #fff; font-weight:700; font-size:15px; padding: 4px 6px 8px 6px;
+}
+
+/* ---------- login ---------- */
+.login-wrap{ margin-top: 8vh; }
+.login-card{
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 34px 32px 26px 32px;
+    box-shadow: 0 4px 16px rgba(16,24,40,0.06);
+}
+
+/* ---------- misc widget overrides ---------- */
+.stButton>button[kind="primary"]{
+    background: var(--primary) !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-weight:700 !important;
+}
+[data-testid="stMetricValue"]{ color: var(--primary-dark); }
+hr{ border-color: var(--line) !important; }
+
+.app-footer{ text-align:center; color: var(--ink-dim); font-size:12px; padding: 16px 0 6px 0; }
