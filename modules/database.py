@@ -76,19 +76,37 @@ def init_db():
             );
         """))
 
+        # Create akomodasi table (Pariwisata / Hotel Occupancy data — TPK & RLMTGAB)
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS public.akomodasi (
+                kd_prov text,
+                kd_kab text,
+                jenis_akomodasi text,
+                kelas_akomodasi integer,
+                mktj double precision,
+                mkts double precision,
+                mtgab double precision,
+                tpk double precision,
+                rlmtgab double precision,
+                tahun integer NOT NULL,
+                bulan integer NOT NULL
+            );
+        """))
+
 def init_narrative_table():
+    """Creates the shared AI-narrative cache table used by BOTH the
+    Transportasi pages (dashboard_page.py / report_page.py) and the
+    Pariwisata (Akomodasi) page. A single generic (report_type, period_key)
+    key lets every page cache its own narratives in one place."""
     engine = get_engine()
     with engine.begin() as conn:
         conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS ai_narratives_cache (
-                provinsi TEXT,
-                moda TEXT,
-                indikator TEXT,
-                tahun INTEGER,
-                bulan TEXT,
+            CREATE TABLE IF NOT EXISTS ai_narratives (
+                report_type TEXT NOT NULL,
+                period_key TEXT NOT NULL,
                 narrative_text TEXT,
-                source TEXT,
-                PRIMARY KEY (provinsi, moda, indikator, tahun, bulan)
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (report_type, period_key)
             )
         """))
 
@@ -100,6 +118,8 @@ def delete_db():
             conn.execute(text("DROP TABLE IF EXISTS public.transportasi_udara CASCADE;"))
             conn.execute(text("DROP TABLE IF EXISTS public.transportasi_laut CASCADE;"))
             conn.execute(text("DROP TABLE IF EXISTS public.wilayah CASCADE;"))
+            conn.execute(text("DROP TABLE IF EXISTS public.akomodasi CASCADE;"))
+            conn.execute(text("DROP TABLE IF EXISTS ai_narratives CASCADE;"))
             conn.execute(text("DROP TABLE IF EXISTS ai_narratives_cache CASCADE;"))
         return True
     except Exception as e:
